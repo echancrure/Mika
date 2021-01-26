@@ -72,7 +72,7 @@ INTEGER                 ({DIGIT}{DIGIT}*)
                           return(SQUARE_BRACKETED);
                         }
 
-{INTEGER}\              {
+{INTEGER}\             {
                           yylval.id = malloc((strlen(yytext)+1)*sizeof(char));
                           strcpy(yylval.id, yytext);
                           return(INTEGER);
@@ -89,9 +89,7 @@ INTEGER                 ({DIGIT}{DIGIT}*)
                           strcpy(yylval.id, yytext);
                           return(RENAME_REF);
                         }
-{INTEGER}[a-z]([0-9]*[a-z]+)+([a-z0-9])*    { 
-                                             return RUBBISH;
-                                            }
+
 {INTEGER}[a-zA-Z\>\<\=\^](\<.*\>)?{INTEGER}     {
                           get_line_col(yytext); // sets yylval.line, .letter and .column appropriately
                           return(LINE_CHAR_COL);
@@ -113,7 +111,23 @@ INTEGER                 ({DIGIT}{DIGIT}*)
                                                                   return(SUBUNIT);
                                                                 }
 \n\X\                   {return(XLETTER);}
-\n\D\                   {return(DLETTER);}
+
+\n\D\ ([a-zA-Z0-9\!\�\$\\%\\^\&\(\)\-\+\_\=\[\]\{\}\;\'\@\#\~\,\.])*\.(ads|adb)[\ \t]+[^\ ]+\ [^\ \n]+       {          
+                         // e.g. \nD rune-mika_test_point.adb  20210125152810 a7254580
+                         //read the sourceName and discard everything else. My C is so rusty...
+                         char * s = malloc((strlen(yytext)+1)*sizeof(char));
+                         char * sourceName = s;
+                         char * c = yytext+3; //past beyond "/nD " 
+                         while (*c != ' ' && *c != '\t') {//homemade copy everything from yyext(3) to first space or tab
+                           *s = *c;
+                           c++;
+                           s++;
+                         }
+                         *s = '\0';
+                         yylval.id = malloc((strlen(sourceName)+1)*sizeof(char));
+                         strcpy(yylval.id, sourceName);
+                         return(DLETTER_ETC);
+                        }
 "*"                     {return(ASTERISK);}
 \n\.                    {;}
 [ \t\f]                 {;}

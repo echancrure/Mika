@@ -71,8 +71,7 @@ char *get_ali(char *);
         struct line_col_t line_col;
        }
 
-%token RUBBISH
-%token DLETTER
+%token <id> DLETTER_ETC
 %token XLETTER
 %token ASTERISK
 %token RENAME_REF
@@ -118,24 +117,17 @@ dependency_list : dependency
                 | dependency_list dependency
                 ;
 
-dependency : DLETTER SOURCE_NAME INTEGER hexa subunit_opt
-             {if ($5 == NULL) {
-                 if (debugMode) fprintf(stderr, "\nRead Dependency to file: %s", $2);
-                 add_dependency($2, 0);
+dependency : DLETTER_ETC {if (debugMode) fprintf(stderr, "DLETTER_ETC: %s ", $1);} subunit_opt
+             {if ($3 == NULL) {
+                 if (debugMode) fprintf(stderr, "\nRead Dependency to file: %s\n", $1);
+                 add_dependency($1, 0);
                }
                else {
-                 if (debugMode) fprintf(stderr, "\n%s is sub-unit\n", $2);
-                 add_dependency($2, 1);
+                 if (debugMode) fprintf(stderr, "\n%s is sub-unit\n", $1);
+                 add_dependency($1, 1);
                }
              }
            ;
-
-/* this extremely messy and dirty but best we could do */
-hexa : INTEGER
-     | LINE_CHAR_COL
-     | ENTITY
-     | RUBBISH
-     ;
 
 subunit_opt : /* empty */
               {$$ = NULL;}
@@ -324,14 +316,14 @@ void yyerror(const char* s)
         extern int yychar;
         error_count++;
 
-        //fprintf(stderr,"  %s", s);
+        fprintf(stderr,"  %s", s);
         if (yylineno) {
           fprintf(stderr,"OURXREF Error: on line %d", yylineno);
           }
         fprintf(stderr," on input: ");
         if (yychar >= 0400) {
                 switch (yychar) {
-                        case DLETTER : fprintf(stderr, "%s a DLETTER\n", yytext);
+                        case DLETTER_ETC : fprintf(stderr, "%s a DLETTER_ETC\n", yytext);
                                 break;
                         case XLETTER : fprintf(stderr, "%s a XLETTER\n", yytext);
                                 break;
