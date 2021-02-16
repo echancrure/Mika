@@ -93,7 +93,7 @@ mika_symbolic__analyse(Input_file, Target_source_file_name, Target_package_name,
         %as all declarations within package specifications and bodies are executed, all global variables become attributed variables (as Types, SEAVs, Packages or Subprograms)
         %all mains of package bodies are executed, hence, remember, that some code statements are actually executed (not just syntactic transformation)
         %trace,
-        (exec(All_contents, _) ->       %ELABORATION
+        (exec(All_contents, _) ->       %ELABORATION only
 		true
         ;
                 common_util__error(10, "Elaboration failed", no_error_consequences, [(Input_file, Input_file)], 1024030, mika_symbolic, mika_symbolic_analyse, no_localisation, "this should never happen")
@@ -161,14 +161,7 @@ post_elaboration(Target_package_name, Target_subprogram_name, Sub_var, All_conte
                  ;
                         (% 02/01/09 as the context is ignored the current path is reset back to []
                          mika_globals:mika_globals__clean_up,   %erase all backtractable globals and current path
-                         %and now reset them : the path so far, which includes the elaboration, is erased
-                         mika_globals:mika_globals__init_BT_path('current_path_bran', []),
-	                 mika_globals:mika_globals__init_BT_path('current_path_deci', []),
-                         mika_globals:mika_globals__init_BT_path('current_path_mcdc_gate', []),
-	                 mika_globals:mika_globals__init_BT_path('current_path_cond', []),
-                         mika_globals:mika_globals__set_BT('call_stack_bran', []),
-	                 mika_globals:mika_globals__set_BT('call_stack_deci', []),
-	                 mika_globals:mika_globals__set_BT('call_stack_cond', [])
+                         mika_globals:mika_globals__reset_BT    %and now reset them : the path so far, which includes the elaboration, is erased
                         )
                  ),
                  (Driver == 'no_driver' ->
@@ -193,7 +186,9 @@ post_elaboration(Target_package_name, Target_subprogram_name, Sub_var, All_conte
                         (mika_globals:mika_globals__set_NBT('driver', 'no_driver'),     %to indicate that the driver has been executed
                          context_checking(All_vars),            %25/04/08 may modify the mode of some of the seav variables depending on context desired (e.g introduces init_elab mode)
                          %trace,
+                         %%%%%%
                          setup_and_run(Target_subprogram_name, Sub_var, All_contents, SEAV_list, Unhandled_list, ParamL_driver, return(Return_c), Flow),        %where it all happens prior to reporting : may fail if we unsuccessfully backtrack : that is normal
+                         %%%%%%
                          (common_util:common_util__is_an_exception(Flow) ->
                                 true			%it is worth reporting the path followed
                          ;
@@ -223,9 +218,9 @@ post_elaboration(Target_package_name, Target_subprogram_name, Sub_var, All_conte
         ),
         (Driver_achieves_full_coverage == 'no' ->
                 (%an interesting path has been followed, worth labeling attempt and reporting
-                 label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Target_subprogram_name, Sub_var, ParamL_driver, return(Return_c), Newly_covered),		%report generation, test cases are generated etc. [may fail because of labeling]
+                 label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Target_subprogram_name, Sub_var, ParamL_driver, return(Return_c), Newly_covered, Flow),		%report generation, test cases are generated etc. [may fail because of labeling]
                  %checking coverage criterion
-                 (common_util:common_util__is_an_exception(Flow) -> %an uncaught exception has reached the top level
+                 ((common_util:common_util__is_an_exception(Flow), Strategy \== 'rune_coverage') -> %an unexpected uncaught exception has reached the top level
                         (Flow =.. ['exception'|Exception_arguments],
                          format('answer_output', "----------------------------------------------------------\n", []),
                          format('answer_output', "Uncaught exception detected : ~w\n", [Exception_arguments]),
@@ -269,6 +264,7 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                 context_checking(Rest).
 %%%
         print_coverage(Strategy, Percentage_achieved) :-
+                %trace,
                 mika_coverage:mika_coverage__not_finished(Strategy, Not_covered, Percentage_achieved, Already_covered),
                 format(answer_output, "----------------------------------------------------------\n", []),
                 format(answer_output, "FINAL REPORT\n", []),
@@ -276,6 +272,9 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                 length(Already_covered, Nac),
                 (Strategy == 'branch' ->
                         format(answer_output, "~w BRANCHES PREDICTED COVERED:\n", [Nac])
+                ;
+                 Strategy == 'rune_coverage' ->
+                        format(answer_output, "~w RUNTIME ERRORS PREDICTED GENERATED:\n", [Nac])
                 ;
                  (Strategy == 'decision' ; Strategy == 'mcdc') ->
                         format(answer_output, "~w DECISIONS PREDICTED COVERED:\n", [Nac])
@@ -286,6 +285,9 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                 length(Not_covered, Nnc),
                 (Strategy == 'branch' ->
                         format(answer_output, "~w BRANCHES PREDICTED REMAINING TO BE COVERED:\n", [Nnc])
+                ;
+                 Strategy == 'rune_coverage' ->
+                        format(answer_output, "~w RUNTIME ERRORS PREDICTED REMAINING TO BE COVERED:\n", [Nnc])
                 ;
                  (Strategy == 'decision' ; Strategy == 'mcdc') ->
                         format(answer_output, "~w DECISIONS PREDICTED REMAINING TO BE COVERED:\n", [Nnc])
@@ -300,6 +302,12 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                                 (Next = (Number, Truth_value),
                                  user:bran(Number, Name, Filename, Suffix, Path, Line, Column),
                                  format(answer_output, "Number ~w, outcome ~w, in file ~w~w, on line ~w and column ~w\n", [Number, Truth_value, Filename, Suffix, Line, Column])
+                                )
+                        ;
+                         Strategy == 'rune_coverage' ->
+                                (Next = RuneId,
+                                 user:rune(RuneId, Name, Filename, Suffix, Path, Line, Column),
+                                 format(answer_output, "Number ~w, in file ~w~w, on line ~w and column ~w\n", [RuneId, Filename, Suffix, Line, Column])
                                 )
                         ;
                          Strategy == 'decision' ->
@@ -319,11 +327,17 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                         print_individuals_overall_coverage_details(Rest, Strategy).
 %%%
                 print_individuals_overall_not_covered_details([], _Strategy).
-                print_individuals_overall_not_covered_details([Next|Rest], Strategy) :-
+                print_individuals_overall_not_covered_details([Next|Rest], Strategy) :- %loads of duplicated code here
                         (Strategy == 'branch' ->
                                 (Next = (Number, Truth_value),
                                  user:bran(Number, Name, Filename, Suffix, Path, Line, Column),
                                  format(answer_output, "Number ~w, outcome ~w, in file ~w~w, on line ~w and column ~w\n", [Number, Truth_value, Filename, Suffix, Line, Column])
+                                )
+                        ;
+                         Strategy == 'rune_coverage' ->
+                                (Next = RuneId,
+                                user:rune(RuneId, Name, Filename, Suffix, Path, Line, Column),
+                                format(answer_output, "Number ~w, in file ~w~w, on line ~w and column ~w\n", [RuneId, Filename, Suffix, Line, Column])
                                 )
                         ;
                          Strategy == 'decision' ->
@@ -354,7 +368,7 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                         ),
                         print_individuals_overall_not_covered_details(Rest, Strategy).
 %%%
-print_covered_in_path(Strategy) :-
+print_covered_in_path(Strategy, Flow) :-
         mika_coverage:util_get_globals(Strategy, _Global_covered, Global_current_path, _Global_overall),
         mika_globals:mika_globals__get_BT_path(Global_current_path, Current_path),
         remove_duplicates(Current_path, Reduced_current_path),		%from Sicstus list library
@@ -367,6 +381,12 @@ print_covered_in_path(Strategy) :-
         ;
          Strategy == 'mcdc' ->
                 format('answer_output', "GATES OR ATOMIC DECISIONS:\n", [])
+        ;
+         Strategy == 'rune_coverage' ->
+                (common_util:common_util__get_exception_id(Flow, RuneId),
+                 format('answer_output', "RUNTIME EXCEPTION RAISED, NUMBER: ~w\n", [RuneId]),
+                 format('answer_output', "Following these branches :\n", [])    %just to provide additional details
+                )
         ;
                 common_util:common_util__error(10, "Testing strategy is unknown", no_error_consequences, [(strategy, Strategy)], 1025944, mika_symbolic, print_covered_in_path, no_localisation, "Strategy can only be one of branch|decision|condition|mcdc")
         ),
@@ -383,9 +403,10 @@ print_covered_in_path(Strategy) :-
         %%%
         print_individuals_coverage_details([], _Strategy).
         print_individuals_coverage_details([(start(_Target_subprogram_name), 'true')|Rest], Strategy) :-
+                !,      %added 06/02/2021
                 print_individuals_coverage_details(Rest, Strategy).
         print_individuals_coverage_details([Next|Rest], Strategy) :-
-                (Strategy == 'branch' ->
+                ((Strategy == 'branch' ; Strategy == 'rune_coverage') ->
                         (Next = (Number, Truth_value),
                          user:bran(Number, _Name, Filename, Suffix, _Path, Line, Column),
                          format('answer_output', "Number ~w, outcome ~w, in file ~w~w, on line ~w and column ~w\n", [Number, Truth_value, Filename, Suffix, Line, Column])
@@ -464,7 +485,9 @@ setup_and_run(Target_subprogram_name, Sub_var, All_contents, SEAV_list, Unhandle
 		         (Param_vars == [] ->
                                 exec(assign(Return_c, Sub_var), Flow)                              %where it all happens : function without arguments
                          ;
-                                exec(assign(Return_c, indexed(Sub_var, Param_vars)), Flow)         %where it all happens : function with arguments
+                                (%trace,
+                                 exec(assign(Return_c, indexed(Sub_var, Param_vars)), Flow)         %where it all happens : function with arguments
+                                )
                          ),
                          term_variables_bag(a(All_contents, Param_vars, Return_c), All_global_and_params_vars)
                         )
@@ -476,8 +499,9 @@ setup_and_run(Target_subprogram_name, Sub_var, All_contents, SEAV_list, Unhandle
         ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %report generation for a path that according to the midoan_solver is so far valid (might still prove impossible to label)
-label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Target_subprogram_name, Sub_var, ParamL_driver, return(Return_c), Newly_covered) :-
-        (prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Outputs, Contexts, Nb, Newly_covered) ->       %done prior to labeling to keep ranges intact : could do it after if a copy is taken
+label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Target_subprogram_name, Sub_var, ParamL_driver, return(Return_c), Newly_covered, Flow) :-
+        %trace,
+        (prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Outputs, Contexts, Nb, Newly_covered, Flow) ->       %done prior to labeling to keep ranges intact : could do it after if a copy is taken
 	 %prepare_mika_report should logically never fail, but since it does too often because of bugs and is hard to debug we check for failure
                 true    %all is well in printing out the start of report
         ;
@@ -543,11 +567,17 @@ label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Targe
 		)
 	),
 	mika_coverage:mika_coverage__add_to_covered,	%the coverage achieved is updated
+        %trace,
+        (Strategy == 'rune_coverage' ->
+                (common_util:common_util__get_exception_id(Flow, RuneId),
+                 mika_coverage:update_runes_state(add_to_covered, RuneId) 
+                )
+        ),
 	!.
 
 %only SEAV_list is an input, the rest are outputs necessary for labeling
 %only for the foo.mika file
-prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Outputs, Contexts, Nb1, Newly_covered) :-
+prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Outputs, Contexts, Nb1, Newly_covered, Flow) :-
         mika_globals:mika_globals__get_NBT('debug_mode', DebugMode),
         common_util__error(1, "MIKA : Report Generation", no_error_consequences, no_arguments, 144494, mika_symbolic, prepare_mika_report, no_localisation, no_extra_info),
         pmr_partition_seavs(SEAV_list, Unused, Inputs, Outputs, Contexts),
@@ -557,9 +587,9 @@ prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Out
         Nb1 is Nb + 1,
         mika_globals:mika_globals__set_NBT('path_nb', Nb1),
         format('answer_output', "TEST NUMBER ~d\n", [Nb1]),
-        print_covered_in_path(Strategy),
+        print_covered_in_path(Strategy, Flow),
         print_newly_covered(Newly_covered, Strategy),
-	(DebugMode == 'debug' ->
+        (DebugMode == 'debug' ->
                 (format(answer_output, "\nUNHANDLED VARIABLES:\n", []),
                  mika_print:mika_print__unhandled(Unhandled_list),
                  format(answer_output, "\nUNUSED TOP LEVEL SOURCE CODE VARIABLES:\n", []),
@@ -589,18 +619,23 @@ prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Out
         ).
 %%%
         print_newly_covered(Newly_covered, Strategy) :-
-                (Strategy == 'branch' ->
-                        format('answer_output', "\nBRANCHES COVERAGE INCREASED BY BRANCHES:\n", [])
+                (Strategy == 'rune_coverage' ->
+                        true    %exception covered already reported (there can only be one)
                 ;
-                 Strategy == 'decision' ->
-                        format('answer_output', "\nDECISION COVERAGE INCREASED BY DECISIONS:\n", [])
-                ;
-                 Strategy == 'mcdc' ->
-                        format('answer_output', "\nMC/DC COVERAGE INCREASED BY GATES OR ATOMIC DECISIONS:\n", [])
-                ;
-                        common_util:common_util__error(10, "Testing strategy is unknown", no_error_consequences, [(strategy, Strategy)], 1025944, mika_symbolic, print_newly_covered, no_localisation, "Strategy can only be one of branch|decision|condition|mcdc")
-                ),
-                print_individuals_coverage_details(Newly_covered, Strategy).
+                        ((Strategy == 'branch' ->
+                                format('answer_output', "\nBRANCHES COVERAGE INCREASED BY BRANCHES:\n", [])
+                         ;
+                         Strategy == 'decision' ->
+                                format('answer_output', "\nDECISION COVERAGE INCREASED BY DECISIONS:\n", [])
+                         ;
+                         Strategy == 'mcdc' ->
+                                format('answer_output', "\nMC/DC COVERAGE INCREASED BY GATES OR ATOMIC DECISIONS:\n", [])
+                         ;
+                                common_util:common_util__error(10, "Testing strategy is unknown", no_error_consequences, [(strategy, Strategy)], 1025944, mika_symbolic, print_newly_covered, no_localisation, "Strategy can only be one of branch|decision|condition|mcdc")
+                         ),
+                         print_individuals_coverage_details(Newly_covered, Strategy)
+                        )
+                ).
 %%%
 labeling_failure(Message) :-
         format(answer_output, Message, []),

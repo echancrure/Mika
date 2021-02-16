@@ -172,7 +172,7 @@ exec(break_on_through(Compound), Flow) :-
 %%%
 %for Ada rule 11.1
 exec(exception_declaration(Exception_idL), carry_on) :-
-        %commented ou 18/04/08 !,
+        %commented on 18/04/08 !,
         common_util__error(4, "Exception declarations are currently ignored", no_error_consequences, [(exception_idL, Exception_idL)], 4120143, mika_symbolic, exec, no_localisation, no_extra_info).
 
 %%%

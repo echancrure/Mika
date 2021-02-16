@@ -26,6 +26,16 @@ mika_globals__clean_up :-
 
 :- mika_globals__clean_up.      %every time it is loaded to be sure
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+mika_globals__reset_BT:-
+        mika_globals:mika_globals__init_BT_path('current_path_bran', []),
+        mika_globals:mika_globals__init_BT_path('current_path_deci', []),
+        mika_globals:mika_globals__init_BT_path('current_path_mcdc_gate', []),
+        mika_globals:mika_globals__init_BT_path('current_path_cond', []),
+        mika_globals:mika_globals__init_BT_path('current_path_false_rune', []),
+        mika_globals:mika_globals__set_BT('call_stack_bran', []),
+        mika_globals:mika_globals__set_BT('call_stack_deci', []),
+        mika_globals:mika_globals__set_BT('call_stack_cond', []).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 mika_globals__set_BT(X, Y) :-
         assertb(val(X, Y)).
 %%%

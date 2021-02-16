@@ -19,6 +19,7 @@
 %covered_bran			: non backtrackable	: list of branches covered by previous tests (list of (Id, true|false))
 %covered_deci			: non backtrackable	: list of decisions covered by previous tests (list of (Id, true|false))
 %covered_cond			: non backtrackable	: list of conditions covered by previous tests (list of (Id, true|false))
+%runes_state                    : non backtrackable	: runes_state(Remain, Covered, Mika_unreachable), the state of the runes, list of Ids, 
 %to_cover                       : non backtrackable	: list of branches or decisions that need to be covered according to, the user defined, level of coverage thoroughness desired
 %current_path_bran		: backtrackable		: chronological list of branches in the current path (list of (Id, true|false))
 %current_path_deci		: backtrackable		: chronological list of decisions in the current path (list of (Id, true|false))
@@ -33,7 +34,6 @@
 %current_check			: non backtrackable	: used within check_well_formedness in mika_coverage_check.pl as a simple non-logical parameter
 %%%
 %current_mcdc_deci              : backtrackable		: keep the current decision Id, as a simple non-logical parameter, for building overall_mcdc_deci
-%overall_mcdc_deci              : non backtrackable	: %list of (Deci_id, Gate_list, Truth_list) with Gate_list made of [gate(Gate_id, Op, Remaining_list)] with Remaining_list made of [(Truth_value, Truth_value)]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 :- module(mika_coverage, []).
@@ -57,6 +57,8 @@
 %arc(Start, End, true|false), Start and End are labels
 :- dynamic arc_bran/3.          %cfg of branches
 :- dynamic arc_deci/3.          %cfg of decisions
+%arc(BranStart, true|false, Rune) "to reach run"
+:- dynamic arc_rune/3.          %mixed bran/rune for runes
 %call(Start, Subprogram_name, true|false)
 :- dynamic call_bran/3.         %subprogram call from a branch
 :- dynamic call_deci/3.         %subprogram call from a decision
@@ -65,15 +67,55 @@
 %is_a_rename(Subprogram_name, Original_subprogram_name) %addedd 07/03/08
 :- dynamic is_a_rename/2.               %used to follow calls of renamed subprogram
 %successor((Id, Truth), [(Id, Truth)*])
-:- dynamic successor/2.                 %successor list for branches or decisions
+:- dynamic successor/2.                 %successor list for branches or decisions with format successor((Id, Truth), [(Id, Truth)]). First Id can be start(fullSubprogramName)
+:- dynamic rune_successor/2.            %successor list for runes with the format successor((BranId, BranTruth), [RuneId])
 %%%
 :- dynamic tmp_call/1.                  %temporary assert used in add_all_calls/3
 
-:- compile([mika_coverage__build_cfg]).     %main predicates for cfg building
+:- compile([mika_coverage__build_cfg]). %main predicates for cfg building
 :- compile([mika_coverage__util]).	%utilitarian predicates
-:- compile([mika_coverage__check]).      %for post cfg building error checking
+:- compile([mika_coverage__check]).     %for post cfg building error checking
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%builds a control flow graph representation of the structure of the source code
+mika_coverage__build_cfg(All_contents, Strategy) :-
+        mika_globals:mika_globals__set_NBT('overall_mcdc_deci', []),
+        mika_globals:mika_globals__set_NBT('runes_state', runes_state([], [], [])),
+	%%%start cfg initialisations
+	retractall(arc_bran(_, _, _)),
+        retractall(arc_deci(_, _, _)),
+        retractall(arc_rune(_, _, _)),
+        retractall(call_bran(_, _, _)),
+	retractall(call_deci(_, _, _)),
+        retractall(successor(_, _, _)),
+        retractall(rune_successor(_, _, _)),
+        mika_globals:mika_globals__set_BT('current_node_bran', start(elaboration)),
+	mika_globals:mika_globals__set_BT('current_node_deci', start(elaboration)),
+        mika_globals:mika_globals__set_BT('current_arc_bran', true),
+	mika_globals:mika_globals__set_BT('current_arc_deci', true),
+        %trace,
+	%%%end cfg initialisations
+      %  cover(All_contents, _),
+        %trace,
+	(\+     (%Where it all happens : covers (but leaves choice points behind) the entire code to extract CFG and overall branches, decisions and conditions
+                 %was simply : cover(All_contents, _), but made it very difficult to detect unautorised failure of cover
+                 %cover should only fail if there are no more choice points
+                 %we use 'if' construct rather than -> to be sure to explore all the solutions of cover
+                 %NOTE not fool-proof : cover may fail unexpectedly and yet build a correct cfg (but that may be imcomplete (e.g. some parts of the code have not been tackled at all)
+                 if(cover(All_contents, _),
+                    true,                       %success
+                    common_util__error(10, "CFG building failed", no_error_consequences, no_arguments, 1035455, mika_coverage, mika_coverage__build_cfg, no_localisation, "There is a problem in Mika's cfg building")
+                   ),
+                 create_arc('branch_decision', 'end', 'end'), %the end of the elaboration
+                 fail
+                )
+	),
+        %trace,
+        calculate_successors(Strategy, 'elaboration'),   %we do this even for subprogram testing because if the elaboration (which needs to be performed) contains branches etc, they need to be followed and successors may need to be checked
+	check_well_formedness,	%debugging check in mika_coverage_check.pl
+        !.
+%%%
 %recording the current subpaths considered
 %Kind is 'branch', 'decision', 'mcdc' or 'condition'
 %Tag is an element of the current path
@@ -114,7 +156,7 @@ mika_coverage__update_call_stack(push, Kind) :-	% a subprogram call
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %adding to the list of branches, decisions or conditions that have already been covered for sure (list of tags)
 %only called once after successful labeling
-%Kind is 'branch', 'decision', mcdc or 'condition'
+%Kind is 'branch', 'decision', 'mcdc' or 'condition'
 mika_coverage__add_to_covered :-
 	add_to_covered('branch'),
 	add_to_covered('decision'),
@@ -123,7 +165,16 @@ mika_coverage__add_to_covered :-
 %%%
         add_to_covered(Kind) :-
                 (Kind == 'mcdc' ->
-                        update_coverage_to_overall_mcdc_deci
+                        (%trace,
+                         mika_globals:mika_globals__get_NBT(overall_mcdc_deci, Overall_mcdc_deci),            %list of (Deci_id, Gate_list, Truth_list) with Gate_list made of [gate(Gate_id, Op, Remaining_list)] with Remaining_list made of [(Truth_value, Truth_value)]
+                         mika_globals:mika_globals__get_BT_path(current_path_deci, Current_path_deci),                %list of decisions in the current path (list of (Id, true|false))
+                         remove_duplicates(Current_path_deci, Reduced_current_path_deci),		%from Sicstus list library
+                         mika_list:mika_list__subtract(Reduced_current_path_deci, [(start(_), _)], Clean_current_path_deci),
+                         update_decisions_coverage_in_overall_mcdc_deci(Clean_current_path_deci, Overall_mcdc_deci, Overall_mcdc_deci_decision_updated),
+                         mika_globals:mika_globals__get_BT_path(current_path_mcdc_gate, Current_path_mcdc_gate),      %list of gate(Deci_id, Gate_id, Op, covers|masked(Truth [,Truth])) in the current path
+                         update_gates_coverage_in_overall_mcdc_deci(Current_path_mcdc_gate, Overall_mcdc_deci_decision_updated, New_overall_mcdc_deci),
+                         mika_globals:mika_globals__set_NBT(overall_mcdc_deci, New_overall_mcdc_deci)
+                        )
                 ;
                         (util_get_globals(Kind, Global_covered, Global_current_path, _Global_overall),
                          mika_globals:mika_globals__get_BT_path(Global_current_path, Current_path),
@@ -133,6 +184,43 @@ mika_coverage__add_to_covered :-
                          mika_globals:mika_globals__set_NBT(Global_covered, Covered)
                         )
                 ).
+%%%update the coverage of the decisions within Overall_mcdc_deci
+        update_decisions_coverage_in_overall_mcdc_deci([], Overall_mcdc_deci, Overall_mcdc_deci).
+        update_decisions_coverage_in_overall_mcdc_deci([(Id_deci, Truth)|Rest], Overall_mcdc_deci, New_overall_mcdc_deci) :-
+                (nth(_Nth, Overall_mcdc_deci, (Id_deci, Gate_list, Truth_list), Overall_mcdc_deci_rest) ->
+                        (delete(Truth_list, Truth, New_truth_list),
+                         update_decisions_coverage_in_overall_mcdc_deci(Rest, [(Id_deci, Gate_list, New_truth_list)|Overall_mcdc_deci_rest], New_overall_mcdc_deci)
+                        )
+                ;
+                        update_decisions_coverage_in_overall_mcdc_deci(Rest, Overall_mcdc_deci, New_overall_mcdc_deci) %because the Id_deci followed is of no interest, we had an error message : common_util__error(10, "MCDC coverage update failure : should never happen", no_error_consequences, no_arguments, 103639, mika_coverage, update_decisions_coverage_in_overall_mcdc_deci, no_localisation, "There is a problem in Mika")
+                ).
+
+        %update the coverage of the gates within Overall_mcdc_deci
+        update_gates_coverage_in_overall_mcdc_deci([], Overall_mcdc_deci, Overall_mcdc_deci).
+        update_gates_coverage_in_overall_mcdc_deci([gate(Id_deci, Gate_id, Op, Coverage)|Rest], Overall_mcdc_deci, New_overall_mcdc_deci) :-
+                ((Coverage = covers(_) ; Coverage = covers(_, _)) ->
+                        ((nth(_Nth, Overall_mcdc_deci, (Id_deci, Gate_list, Truth_list), Overall_mcdc_deci_rest), nth(_Nth2, Gate_list, gate(Gate_id, Op, Remaining), Gate_list_rest)) ->
+                                ((Coverage = covers(Truth) ->
+                                        delete(Remaining, (Truth), New_remaining)
+                                        ;
+                                        Coverage = covers(Truth_le, Truth_ri) ->
+                                        (delete(Remaining, (Truth_le, Truth_ri), New_remaining_tmp),
+                                                ((Op == xor, New_remaining_tmp = [_]) ->       %'xor' gate is different the list will become empty whenever any 3 truth have been covered
+                                                New_remaining = []
+                                                ;
+                                                New_remaining = New_remaining_tmp
+                                                )
+                                        )
+                                        ),
+                                        Overall_mcdc_deci_updated = [(Id_deci, [gate(Gate_id, Op, New_remaining)|Gate_list_rest], Truth_list)|Overall_mcdc_deci_rest]
+                                )
+                        ;
+                                Overall_mcdc_deci_updated = Overall_mcdc_deci   %not changed (because ignored) we had : common_util__error(10, "MCDC coverage update failure : should never happen", no_error_consequences, no_arguments, 1065513, mika_coverage, update_gates_coverage_in_overall_mcdc_deci, no_localisation, "There is a problem in Mika")
+                        )
+                ;
+                        Overall_mcdc_deci_updated = Overall_mcdc_deci   %not changed (because masked)
+                ),
+                update_gates_coverage_in_overall_mcdc_deci(Rest, Overall_mcdc_deci_updated, New_overall_mcdc_deci).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 mika_coverage__is_in_to_cover(Tag, Is_in_to_cover) :-
         mika_globals:mika_globals__get_NBT('to_cover', To_cover),
@@ -337,10 +425,10 @@ mika_coverage__path_may_lead_to_uncovered_not_in_current_path(Kind, (Id, Truth),
                 ),
                 !.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Kind is 'branch', 'decision', 'mcdc' or 'condition'
+%Strategy is branch|decision|mcdc|rune_coverage|condition
 %might fail
-mika_coverage__finished(Kind) :-
-	get_remaining_to_be_covered(Kind, _Overall_reachable, _Already_covered, To_be_covered),
+mika_coverage__finished(Strategy) :-
+        get_remaining_to_be_covered(Strategy, _Overall_reachable, _Already_covered, To_be_covered),
 	(To_be_covered == [] ->
                 true
         ;
@@ -349,7 +437,7 @@ mika_coverage__finished(Kind) :-
                 )
         ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Kind is 'branch', 'decision', 'mcdc' or 'condition'
+%Kind is 'branch', 'decision', 'rune_coverage', 'mcdc' or 'condition'
 %called when full coverage cannot be achieved only calculates the percentage coverage achieved
 mika_coverage__not_finished(Kind, Remaining_to_be_covered, Percentage_achieved, Already_covered) :-
         %trace,
@@ -364,20 +452,28 @@ mika_coverage__not_finished(Kind, Remaining_to_be_covered, Percentage_achieved, 
         ).
 %To_cover, Already_covered and To_be_covered are lists of (Id, true|false) for 'branch', 'decision' and 'condition'
 %for mcdc To_cover and Already_covered is a list of Ids and To_be_covered is a list of (Id_deci, Gate_list, Truth_list)
-get_remaining_to_be_covered(Kind, To_cover, Already_covered, To_be_covered) :-
-        mika_globals:mika_globals__get_NBT('to_cover', To_cover_id_truth),    %list of (Id, true|false)
-        (Kind == 'mcdc' ->
-                (get_deci_ids_only(To_cover_id_truth, Ids_to_cover),
-                 To_cover = Ids_to_cover,
-                 mika_globals:mika_globals__get_NBT('overall_mcdc_deci', Overall_mcdc_deci),
-                 get_to_be_covered_from_overall_mcdc_deci(Ids_to_cover, Overall_mcdc_deci, Already_covered, To_be_covered)
+%for rune just a list of RuneIds
+get_remaining_to_be_covered(Strategy, To_cover, Already_covered, To_be_covered) :-
+        (Strategy == rune_coverage ->
+                (mika_globals:mika_globals__get_NBT(runes_state, runes_state(To_cover, Already_covered, _Mika_unreachable)),
+                 mika_list:mika_list__subtract(To_cover, Already_covered, To_be_covered)
                 )
         ;
-	        (To_cover = To_cover_id_truth,
-                 util_get_globals(Kind, Global_covered, _Global_current_path, _Global_overall),
-                 mika_globals:mika_globals__get_NBT(Global_covered, Already_covered_dirty),	%list of (Id, true|false) for 'branch', 'decision' and 'condition'
-                 mika_list:mika_list__intersection(To_cover_id_truth, Already_covered_dirty, Already_covered),
-                 mika_list:mika_list__subtract(To_cover, Already_covered, To_be_covered)
+                (mika_globals:mika_globals__get_NBT('to_cover', To_cover_id_truth),    %list of (Id, true|false)
+                 (Strategy == 'mcdc' ->
+                        (get_deci_ids_only(To_cover_id_truth, Ids_to_cover),
+                        To_cover = Ids_to_cover,
+                        mika_globals:mika_globals__get_NBT('overall_mcdc_deci', Overall_mcdc_deci),
+                        get_to_be_covered_from_overall_mcdc_deci(Ids_to_cover, Overall_mcdc_deci, Already_covered, To_be_covered)
+                        )
+                 ;
+                        (To_cover = To_cover_id_truth,
+                        util_get_globals(Strategy, Global_covered, _Global_current_path, _Global_overall),
+                        mika_globals:mika_globals__get_NBT(Global_covered, Already_covered_dirty),	%list of (Id, true|false) for 'branch', 'decision' and 'condition'
+                        mika_list:mika_list__intersection(To_cover_id_truth, Already_covered_dirty, Already_covered),
+                        mika_list:mika_list__subtract(To_cover, Already_covered, To_be_covered)
+                        )
+                 )
                 )
         ).
 %%%
@@ -406,41 +502,7 @@ get_remaining_to_be_covered(Kind, To_cover, Already_covered, To_be_covered) :-
                          get_to_be_covered_from_overall_mcdc_deci(Reachable_rest, Overall_mcdc_deci, Already_covered, To_be_covered_rest)
                         )
                 ).
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%builds a control flow graph representation of the structure of the source code
-mika_coverage__build_cfg(All_contents, Strategy) :-
-        mika_globals:mika_globals__set_NBT('overall_mcdc_deci', []),
-	%%%start cfg initialisations
-	retractall(arc_bran(_, _, _)),
-	retractall(arc_deci(_, _, _)),
-        retractall(call_bran(_, _, _)),
-	retractall(call_deci(_, _, _)),
-        retractall(successor(_, _, _)),
-        mika_globals:mika_globals__set_BT('current_node_bran', start(elaboration)),
-	mika_globals:mika_globals__set_BT('current_node_deci', start(elaboration)),
-        mika_globals:mika_globals__set_BT('current_arc_bran', true),
-	mika_globals:mika_globals__set_BT('current_arc_deci', true),
-        %trace,
-	%%%end cfg initialisations
-      %  cover(All_contents, _),
-        %trace,
-	(\+     (%Where it all happens : covers (but leaves choice points behind) the entire code to extract CFG and overall branches, decisions and conditions
-                 %was simply : cover(All_contents, _), but made it very difficult to detect unautorised failure of cover
-                 %cover should only fail if there are no more choice points
-                 %we use 'if' construct rather than -> to be sure to explore all the solutions of cover
-                 %NOTE not fool-proof : cover may fail unexpectedly and yet build a correct cfg (but that may be imcomplete (e.g. some parts of the code have not been tackled at all)
-                 if(cover(All_contents, _),
-                    true,                       %success
-                    common_util__error(10, "CFG building failed", no_error_consequences, no_arguments, 1035455, mika_coverage, mika_coverage__build_cfg, no_localisation, "There is a problem in Mika's cfg building")
-                   ),
-                 create_arc('branch_decision', 'end', 'end'), %the end of the elaboration
-                 fail
-                )
-	),
-        %trace,
-        calculate_successors(Strategy, 'elaboration'),   %we do this even for subprogram testing because if the elaboration (which needs to be performed) contains branches etc, they need to be followed and successors may need to be checked
-	check_well_formedness,	%debugging check in mika_coverage_check.pl
-	!.
+
 %%%
 %cfg building
 %also sets up the current node
@@ -491,6 +553,20 @@ create_arc(Kind, Id_bran, Id_deci) :-
                  )
 		)
 	).
+create_rune_arc(RuneId) :-
+        mika_globals:mika_globals__get_BT(current_node_bran, N_bran),
+	mika_globals:mika_globals__get_BT(current_arc_bran, Tv_bran),	%true or false
+        (arc_rune(N_bran, Tv_bran, RuneIdL) ->		%from N to RuneId while Tv holds, already exist
+                (memberchk(RuneId, RuneIdL) ->
+                        true
+                 ;
+                        (retract(arc_rune(N_bran, Tv_bran, RuneIdL)),
+                         assert(arc_rune(N_bran, Tv_bran, [RuneId|RuneIdL]))
+                        )
+                )
+        ;
+                assert(arc_rune(N_bran, Tv_bran, [RuneId]))
+        ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %only called during cfg construction
 add_decision_to_overall_mcdc_deci(Id_deci) :-
@@ -535,56 +611,6 @@ add_gate_to_overall_mcdc_deci(Gate_nb, Op) :-
         ;
                 common_util__error(10, "MCDC cfg update failure : should never happen", no_error_consequences, [(id_deci, Id_deci)], 1063945, mika_coverage, add_gate_to_overall_mcdc_deci, no_localisation, "There is a problem in Mika")
         ).
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%updating the coverage within overall_mcdc_deci only called via mika_coverage__add_to_covered in mcdc case
-update_coverage_to_overall_mcdc_deci :-
-        %trace,
-        mika_globals:mika_globals__get_NBT(overall_mcdc_deci, Overall_mcdc_deci),            %list of (Deci_id, Gate_list, Truth_list) with Gate_list made of [gate(Gate_id, Op, Remaining_list)] with Remaining_list made of [(Truth_value, Truth_value)]
-        mika_globals:mika_globals__get_BT_path(current_path_deci, Current_path_deci),                %list of decisions in the current path (list of (Id, true|false))
-        remove_duplicates(Current_path_deci, Reduced_current_path_deci),		%from Sicstus list library
-        mika_list:mika_list__subtract(Reduced_current_path_deci, [(start(_), _)], Clean_current_path_deci),
-        update_decisions_coverage_in_overall_mcdc_deci(Clean_current_path_deci, Overall_mcdc_deci, Overall_mcdc_deci_decision_updated),
-        mika_globals:mika_globals__get_BT_path(current_path_mcdc_gate, Current_path_mcdc_gate),      %list of gate(Deci_id, Gate_id, Op, covers|masked(Truth [,Truth])) in the current path
-        update_gates_coverage_in_overall_mcdc_deci(Current_path_mcdc_gate, Overall_mcdc_deci_decision_updated, New_overall_mcdc_deci),
-        mika_globals:mika_globals__set_NBT(overall_mcdc_deci, New_overall_mcdc_deci).
-
-        %update the coverage of the decisions within Overall_mcdc_deci
-        update_decisions_coverage_in_overall_mcdc_deci([], Overall_mcdc_deci, Overall_mcdc_deci).
-        update_decisions_coverage_in_overall_mcdc_deci([(Id_deci, Truth)|Rest], Overall_mcdc_deci, New_overall_mcdc_deci) :-
-                (nth(_Nth, Overall_mcdc_deci, (Id_deci, Gate_list, Truth_list), Overall_mcdc_deci_rest) ->
-                        (delete(Truth_list, Truth, New_truth_list),
-                         update_decisions_coverage_in_overall_mcdc_deci(Rest, [(Id_deci, Gate_list, New_truth_list)|Overall_mcdc_deci_rest], New_overall_mcdc_deci)
-                        )
-                ;
-                        update_decisions_coverage_in_overall_mcdc_deci(Rest, Overall_mcdc_deci, New_overall_mcdc_deci) %because the Id_deci followed is of no interest, we had an error message : common_util__error(10, "MCDC coverage update failure : should never happen", no_error_consequences, no_arguments, 103639, mika_coverage, update_decisions_coverage_in_overall_mcdc_deci, no_localisation, "There is a problem in Mika")
-                ).
-
-        %update the coverage of the gates within Overall_mcdc_deci
-        update_gates_coverage_in_overall_mcdc_deci([], Overall_mcdc_deci, Overall_mcdc_deci).
-        update_gates_coverage_in_overall_mcdc_deci([gate(Id_deci, Gate_id, Op, Coverage)|Rest], Overall_mcdc_deci, New_overall_mcdc_deci) :-
-                ((Coverage = covers(_) ; Coverage = covers(_, _)) ->
-                        ((nth(_Nth, Overall_mcdc_deci, (Id_deci, Gate_list, Truth_list), Overall_mcdc_deci_rest), nth(_Nth2, Gate_list, gate(Gate_id, Op, Remaining), Gate_list_rest)) ->
-                                ((Coverage = covers(Truth) ->
-                                        delete(Remaining, (Truth), New_remaining)
-                                 ;
-                                  Coverage = covers(Truth_le, Truth_ri) ->
-                                        (delete(Remaining, (Truth_le, Truth_ri), New_remaining_tmp),
-                                         ((Op == xor, New_remaining_tmp = [_]) ->       %'xor' gate is different the list will become empty whenever any 3 truth have been covered
-                                                New_remaining = []
-                                         ;
-                                                New_remaining = New_remaining_tmp
-                                         )
-                                        )
-                                 ),
-                                 Overall_mcdc_deci_updated = [(Id_deci, [gate(Gate_id, Op, New_remaining)|Gate_list_rest], Truth_list)|Overall_mcdc_deci_rest]
-                                )
-                        ;
-                                Overall_mcdc_deci_updated = Overall_mcdc_deci   %not changed (because ignored) we had : common_util__error(10, "MCDC coverage update failure : should never happen", no_error_consequences, no_arguments, 1065513, mika_coverage, update_gates_coverage_in_overall_mcdc_deci, no_localisation, "There is a problem in Mika")
-                        )
-                ;
-                        Overall_mcdc_deci_updated = Overall_mcdc_deci   %not changed (because masked)
-                ),
-                update_gates_coverage_in_overall_mcdc_deci(Rest, Overall_mcdc_deci_updated, New_overall_mcdc_deci).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %decides if a decision (made up of a Truth_list remaining to be covered, and a list of gates with remaining coverage information) is fully mcdc covered
@@ -603,10 +629,19 @@ gates_covered(Gate_list, Truth_list) :-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %calculate the list of successors for the subprogram under test and set 'to_cover' and, if necessary 'overall_mcdc_deci'
 mika_coverage__post_elaboration(Strategy, Subprogram_name_xref) :-
+        %trace,
         (Subprogram_name_xref == 'elaboration' ->
                 true
         ;
                 calculate_successors(Strategy, Subprogram_name_xref)    %calculate the necessary successor information
+        ),
+        (Strategy == 'rune_coverage' ->
+                (rune_successor((start(Subprogram_name_xref), true), RuneL), %list of runeId
+                 !,
+                 update_runes_state('set_to_cover', RuneL)
+                )
+        ;
+                true        
         ),
         check_successors(start(Subprogram_name_xref), true, To_cover),	        %list of (Id, true|false) that we need to cover according to depth of coverage desired by user
         mika_globals:mika_globals__set_NBT('to_cover', To_cover),
@@ -704,4 +739,38 @@ mika_coverage:mika_coverage__remove_bitwise_decision(Kind, Id_deci) :-
                 !,
                 mika_globals:mika_globals__set_NBT('overall_mcdc_deci', New_overall_mcdc_deci).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%updates runes_state(To_cover, Covered, Mika_unreachable)
+update_runes_state(Task, Arg) :-
+        %trace,
+        mika_globals:mika_globals__get_NBT(runes_state, runes_state(To_cover, Covered, Mika_unreachable)),
+        (Task == 'set_to_cover' ->
+                mika_globals:mika_globals__set_NBT(runes_state, runes_state(Arg, Covered, Mika_unreachable))
+        ;
+         Task == 'add_to_covered' ->
+                (lists:memberchk(Arg, Covered) ->
+                        true    %already present : nothing to do
+                ;
+                        mika_globals:mika_globals__set_NBT(runes_state, runes_state(To_cover, [Arg|Covered], Mika_unreachable))  
+                )
+        ;
+                common_util:common_util__error(10, "Task is unknown", no_error_consequences, [(task, Task)], 10070221, mika_coverage, update_runes_state, no_localisation, "Task can only be one of add_to_overall|add_to_covered")
+        ).
+%%%
+check_runes_state(remain_to_be_covered, RuneId) :-
+        mika_globals:mika_globals__get_NBT(runes_state, runes_state(_To_cover, Covered, _Mika_unreachable)),
+        \+ memberchk(RuneId, Covered).  %not a member
+%%%
+add_false_rune_to_current_path(RuneId) :-
+        mika_globals:mika_globals__add_BT_path(current_path_false_rune, RuneId).
+%%%
+branch_lead_to_new_rune(BranchId, Branch_truth) :-
+        %trace,
+        mika_globals:mika_globals__get_NBT(runes_state, runes_state(_To_cover, Covered, _Mika_unreachable)),
+        rune_successor((BranchId, Branch_truth), Successor_runeL),
+        !,
+        mika_list:mika_list__subtract(Successor_runeL, Covered, New_runeL),
+        mika_globals:mika_globals__get_BT_path(current_path_false_rune, False_runeIdL),
+        mika_list:mika_list__subtract(New_runeL, False_runeIdL, New_reachableL),
+        New_reachableL \= [].       %there are remaining runes ahead from this branch
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1057,6 +1057,12 @@ cover_exp(Ter_exp) :-
         cover_exp(Two),
         cover_exp(Three).
 
+cover_exp(rune(RuneId, _, Original_expression)) :-
+        !,
+        cover_exp(Original_expression),
+        %trace,
+        create_rune_arc(RuneId).
+
 cover_exp(Unknown) :-
         !,
         %trace,

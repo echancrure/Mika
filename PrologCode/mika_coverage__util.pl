@@ -13,7 +13,7 @@
 % utilitarian predicates used during coverage analysis of the parsed files
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 util_get_globals(Kind, Global_covered, Global_current_path, Global_overall) :-
-	(Kind == 'branch' ->
+	((Kind == 'branch' ; Kind == 'rune_coverage') ->
                 (Global_covered = 'covered_bran',
                  Global_current_path = 'current_path_bran'
                 )
@@ -38,10 +38,10 @@ util_get_globals(Kind, Global_covered, Global_current_path, Global_overall) :-
         ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 util_get_stack_name(Kind, Stack_name) :-
-	(Kind == 'branch' ->
+	((Kind == 'branch' ; Kind == 'rune_coverage') ->
 		Stack_name = 'call_stack_bran'
 	;
-	 (Kind == 'decision' ; Kind == 'mcdc')->
+	 (Kind == 'decision' ; Kind == 'mcdc') ->
 		Stack_name = 'call_stack_deci'
 	;
 	 Kind == 'condition' ->
@@ -58,6 +58,10 @@ util_get_stack(Kind, Current_stack) :-	% a query
 util_print_debug :-
 	arc_bran(From, To, Bool),
 	format('debug_output', "arc_bran(~w,\t~w,\t~w).\n", [From, To, Bool]),
+	fail.
+util_print_debug :-
+        arc_rune(BranId, Bool, RuneIdL),
+        format('debug_output', "arc_rune(~w,\t~w,\t~w).\n", [BranId, Bool, RuneIdL]),
 	fail.
 util_print_debug :-
         call_bran(Start, Subprogram_name, Bool),
@@ -83,14 +87,23 @@ util_print_debug :-
 	successor((From, Truth), L),
 	format('debug_output', "successor((~w,\t~w),\t~w).\n", [From, Truth, L]),
 	fail.
+util_print_debug :-
+	rune_successor((From, Truth), L),
+	format('debug_output', "rune_successor((~w,\t~w),\t~w).\n", [From, Truth, L]),
+	fail.
 util_print_debug.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Called twice: for elaboration first and then for the target subprogram
 %the calculation for a single arc is fine
 % but we re-apply it blindly for all arcs and that is not efficient at all but it works fine
 % this is not a simple problem [see Sept. 06] and unless efficiency becomes an issue I would be reluctant to embark on changing it.
 calculate_successors(Original_strategy, Original_Subprogram_name) :-
+        %trace,
         (Original_strategy == 'mcdc' ->
                 Strategy = 'decision'
+        ;
+         Original_strategy == 'rune_coverage' ->        %we get the successors of branches first
+                Strategy = 'branch'
         ;
                 Strategy = Original_strategy
         ),
@@ -101,6 +114,15 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
                 )
         ;
                 ucss_successor_for_subprogram(Strategy, Original_Subprogram_name, Original_Subprogram_name)
+        ),
+        (Original_strategy == 'rune_coverage' ->
+                (is_a_rename(Original_Subprogram_name, Target_subprogram_name) ->
+                        common_util__error(10, "rune coverage of renames is not handled", no_error_consequences, [("Subprogram's name", Original_Subprogram_name)], 10110221, mika_coverage, calculate_successors, no_localisation, "Feature needs to be implemented")
+                ;
+                        calculate_rune_successors(Original_Subprogram_name)
+                )
+        ;
+                true
         ).
 %%%
         ucss_successor_for_subprogram(Strategy, Subprogram_name, Original_Subprogram_name) :-
@@ -123,6 +145,7 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
 %%%
                 % works for single node
                 %based on reachable/3 from C:\sicstus\library\ugraphs.pl
+                %e.g.build_successor([start(runex.adb:3:10:firstcheckcfg) , true], branch, runex.adb:3:10:firstcheckcfg, [], [1 , false, 1 , true, 2 , false, 2 , true])
                 build_successor([], _Strategy, _Original_Subprogram_name, In_set, Out_set) :-
                         ord_del_element(In_set, 'end', Out_set),          %'end' is deleted
                         !.
@@ -256,6 +279,44 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
                                                                 common_util:common_util__error(10, "Unexpected coverage thoroughness: contact Midoan", no_error_consequences, [(coverage_thoroughness, Coverage_thoroughness)], 1025040, mika_coverage, check_to_be_covered, no_localisation, no_extra_info)
                                                         ),
                                                         !.
+%%%
+        calculate_rune_successors(Subprogram_name) :-
+                %trace,
+                successor((start(Subprogram_name), true), SuccessorL),  %the branches
+                (SuccessorL = [] ->     %a subprogram with no branches
+                        (arc_rune(start(Subprogram_name), true, RuneL) ->
+                                true    
+                        ;
+                                RuneL = []      %no runes in this subprogram with no branches
+                        )
+                ;
+                        crs_individual_branches(SuccessorL, RuneL)
+                ),
+                assert(rune_successor((start(Subprogram_name), 'true'), RuneL)),
+                !.
+        
+        crs_individual_branches([], []).
+        crs_individual_branches([(BranId, Truth)|Rest], RuneL) :-
+                crs_individual_branch(BranId, Truth),
+                rune_successor((BranId, Truth), RuneBranL),
+                crs_individual_branches(Rest, RuneRest),
+                mika_list:mika_list__union(RuneBranL, RuneRest, RuneL).
+
+        crs_individual_branch(BranId, Truth) :-
+                (rune_successor((BranId, Truth), RuneBranL) ->
+                        true
+                ;
+                        (successor((BranId, Truth), SuccessorL),
+                         crs_individual_branches(SuccessorL, RuneL),
+                         (arc_rune(BranId, Truth, RuneIdL) -> 
+                                append(RuneIdL, RuneL, RuneBranL)
+                         ;
+                                RuneBranL = RuneL
+                         ),
+                         assert(rune_successor((BranId, Truth), RuneBranL))
+                        )
+                ).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %used to retrieve a clean list of successors
 check_successors(Id, Truth, Successors) :-

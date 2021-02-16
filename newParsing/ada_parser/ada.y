@@ -59,6 +59,7 @@ FILE *subprograms;              //contains the list of subprograms contained in 
 #define GATE 1
 #define DECI 2
 #define BRAN 3
+#define RUNE 4
 
 struct unit_type *current_unit;
 char install_dir[_MAX_PATH*10];      // install directory of ada_par.exe set in main
@@ -99,6 +100,7 @@ int condition_nb = 1;   //counter for the number of conditions
 int gate_nb = 1;        //counter for individual gate (i.e. boolean operators : and, or, xor, not and_then, or_else, not)
 int decision_nb = 1;    //counter for the number of decisions
 int branch_nb = 1;      //counter for the number of branches
+int runtime_nb = 1;     //counter for the number of runtime error checks
 
 int debugMode = 0;      //flag to indicate if we are in debug mode set by by -d command line switch
 int is_standard = 1;    //flag to indicate that we are parsing ada predefined standard package
@@ -182,7 +184,7 @@ void build_condition(struct id_decision, char **, struct unit_type *, int, int);
         struct id_ref_t  id_ref;            // only for ADA identifiers, character literals, string literals, operators
         struct id_decision id_deci;         // for relation and expression_2 to indicate if we are within a decision
         struct id_subprogram_t id_subprogram;       //for subprograms only
-        struct true_line_column_t true_line_column; //used for recording line and columns of detected bran,deci,cond and gates
+        struct true_line_column_t true_line_column; //used for recording line and columns of detected bran,deci,cond, gate and rune
        }
 
 %token PAC_START_ELABORATION
@@ -207,11 +209,11 @@ void build_condition(struct id_decision, char **, struct unit_type *, int, int);
 %token <id_kind> ref_character_literal
 %token <id> ref_integer
 
-%token TIC
-%token DOT_DOT
-%token LT_LT
+%token TIC      //'
+%token DOT_DOT  //..
+%token LT_LT    //<<
 %token BOX
-%token GT_GT
+%token GT_GT    //>>
 %token IS_ASSIGNED
 %token RIGHT_SHAFT
 //start of the keywords : keep together for yyerror
@@ -2298,6 +2300,21 @@ term    : factor                {$$ = $1;}
                                     strcat($$.id, $3.id);
                                     strcat($$.id, "])");
                                    }
+                                  else if(!strncmp($2, " / ", 3))
+                                  {
+                                    $$.id = malloc(SAFETY+strlen(tmp_s)+strlen($1.id)+strlen($2)+strlen($3.id)+strlen($3.id)+14);
+                                    itoa(runtime_nb++, tmp_s, 10);
+                                    print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1); 
+                                    strcpy($$.id, $1.id);
+                                    strcat($$.id, $2);
+                                    strcat($$.id, "rune("); //division by zero exception condition: denominator = 0
+                                    strcat($$.id, tmp_s);
+                                    strcat($$.id, ", ");
+                                    strcat($$.id, $3.id);
+                                    strcat($$.id, " = 0, ");
+                                    strcat($$.id, $3.id);
+                                    strcat($$.id, ")");
+                                  }
                                  else
                                    {$$.id = malloc(SAFETY+strlen($1.id)+strlen($2)+strlen($3.id)+1);
                                     strcpy($$.id, $1.id);
@@ -5151,6 +5168,8 @@ void print_coverage_details(int type, char * number, struct unit_type *unit, int
                 break;
     case BRAN : fprintf(Fcond_ids, "bran(");
                 break;
+    case RUNE : fprintf(Fcond_ids, "rune(");
+                break;            
     default : fprintf(stdout, "Mika ERROR: unknown type of coverage %i in print_coverage_details", type);
               fflush(stdout);
               my_exit(31);

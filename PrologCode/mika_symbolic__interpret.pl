@@ -695,6 +695,36 @@ symbolically_interpret(deci(Id_deci, Expression), Symb, Const, Type, _Exception_
          Outcome = bitwise_deci(Id_deci, _Id_conds, arg(Symb, Const)) ->  %the entire decision was a bitwise expression
                 Type = 'modular_integer'
 	).
+%%%
+symbolically_interpret(rune(RuneId, Exception_constraint, Original_expression), Symb, Const_exp, Type, Exception) :-
+        %trace,
+        %need to check if works for inner exception could occur in expressions such as 1/(1/B))
+        (mika_globals:mika_globals__get_NBT(strategy, rune_coverage)  ->
+                (       (mika_coverage:check_runes_state(remain_to_be_covered, RuneId),
+                         symbolically_interpret_boolean(Exception_constraint, Symb, Const_exp, Type, _E),
+                         (midoan_solver__sdl(Const_exp) ->
+                                Exception = exception([id(RuneId), symb(Symb)])
+                         ;
+                                fail    %the exception cannot be raised: backtrack
+                         )
+                        )
+                ;%deliberate choice point
+                        (mika_coverage:add_false_rune_to_current_path(RuneId),      %do this first
+                         mika_coverage:mika_coverage__get_latest_traversed(branch, (Id, Truth)),
+                         (mika_coverage:branch_lead_to_new_rune(Id, Truth) ->
+                                symbolically_interpret(Original_expression, Symb, Const_exp, Type, Exception)
+                          ;
+                                fail
+                         )
+                        )
+
+                )
+        ;
+                (%carry on with normal interpretation of the expression without raising the exception
+                 symbolically_interpret(Original_expression, Symb, Const_exp, Type, Exception)
+                )
+        ).
+
 symbolically_interpret(+(Le), Symb, Const_exp, Type, _Exception_) :-
 	symbolically_interpret(Le, Le_symb, Le_const, Le_type, _Exception_),
         (Le_type == unhandled_expression ->
@@ -762,18 +792,28 @@ symbolically_interpret(-(Le, Ri), Symb, Const_exp, Type, _Exception_) :-
                  Symb = -(Le_symb, Ri_symb)
                 )
         ).
-symbolically_interpret(/(Le, Ri), Symb, Const_exp, Type, _Exception_) :-
-	symbolically_interpret(Le, Le_symb, Le_const, Le_type, _Exception_),
-	symbolically_interpret(Ri, Ri_symb, Ri_const, Ri_type, _Exception_),
-        ((Le_type == 'unhandled_expression' ; Ri_type == 'unhandled_expression') ->
-                (common_util__error(6, "Unhandled binary div expression", "Will propagate upwards", [(/(le_symb, ri_symb), /(Le_symb, Ri_symb))], 665400, mika_symbolic, symbolically_interpret, symbolically_interpret(/(a, b)), "Subset needs enlarging"),
-                 Symb = 'unhandled_expression',
-                 Type = 'unhandled_expression',
-                 mika_unhandled_atts:mika_unhandled_atts__create(Const_exp, 'unhandled_expression', /(Le_symb, Ri_symb))
+symbolically_interpret(/(Le, Ri), Symb, Const_exp, Type, Exception) :-
+        symbolically_interpret(Le, Le_symb, Le_const, Le_type, Le_exception),
+        (common_util:common_util__is_an_exception(Le_exception) ->
+                (Exception = Le_exception
                 )
         ;
-	        (midoan_solver__interpret(/(Le_const, Ri_const), types(Le_type, Ri_type), Const_exp, Type, _Exception_),
-                 Symb = /(Le_symb, Ri_symb)
+                (symbolically_interpret(Ri, Ri_symb, Ri_const, Ri_type, Ri_exception),
+                        (common_util:common_util__is_an_exception(Ri_exception) ->
+                                (Exception = Ri_exception
+                                )
+                        ;
+                        (Le_type == 'unhandled_expression' ; Ri_type == 'unhandled_expression') ->
+                                (common_util__error(6, "Unhandled binary div expression", "Will propagate upwards", [(/(le_symb, ri_symb), /(Le_symb, Ri_symb))], 665400, mika_symbolic, symbolically_interpret, symbolically_interpret(/(a, b)), "Subset needs enlarging"),
+                                Symb = 'unhandled_expression',
+                                Type = 'unhandled_expression',
+                                mika_unhandled_atts:mika_unhandled_atts__create(Const_exp, 'unhandled_expression', /(Le_symb, Ri_symb))
+                                )
+                        ;
+                                (midoan_solver__interpret(/(Le_const, Ri_const), types(Le_type, Ri_type), Const_exp, Type, _Exception_),
+                                Symb = /(Le_symb, Ri_symb)
+                                )
+                        )
                 )
         ).
 symbolically_interpret(*(Le, Ri), Symb, Const_exp, Type, _Exception_) :-
@@ -832,6 +872,7 @@ symbolically_interpret(rem(Le, Ri), Symb, Const_exp, Type, _Exception_) :-
                  Symb = rem(Le_symb, Ri_symb)
                 )
         ).
+
 %%%
 %one-dimensional array concatenation
 %one or both(!) operand may be of the component type( typical example : "dshdjds" & 'l'

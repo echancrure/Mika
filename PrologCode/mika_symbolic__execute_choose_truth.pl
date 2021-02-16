@@ -34,7 +34,7 @@ choose_truth(Expression, Outcome) :-
         ),*/
         %trace,
         generate_combinations(Expression, CombinationsL),               %generate a list of combinations in CombinationsL
-        mika_globals:mika_globals__get_NBT('strategy', Kind),                          %global branch, decision or condition coverage desired
+        mika_globals:mika_globals__get_NBT('strategy', Kind),                          %global branch, decision, rune_coverage or condition coverage desired
         (CombinationsL = bitwise_deci(Id_deci, _Id_conds, arg(_Symb, _Cons)) ->
                 (Outcome = CombinationsL,                               %because already performed
                  mika_coverage:mika_coverage__remove_bitwise_decision(Kind, Id_deci) %need to update the traversal information : Id_deci has been fully covered (or needs to be removed from list of decisions but may impact cfg too)
@@ -105,8 +105,7 @@ choose_combination([First|Rest], Kind, Chosen_combination, Outcome) :-          
                  )
                 )
         ;
-        %the strategy for branches or for decisions is essentially the same
-         Kind == 'branch' ->
+         (Kind == 'branch' ; Kind == 'rune_coverage') ->
                 (First = bran(Id, _Deci, Outcome_first) ->
                         choose_combination_main(First, Rest, Id, Outcome_first, Kind, Chosen_combination, Outcome)
                 ;
@@ -254,6 +253,19 @@ choose_combination_main(First, Rest, Id, Outcome_first, Kind, Chosen_combination
                                 %)
                          ),
                          random_branch(Likelihood_taking_rest, First, Rest, Outcome_first, Kind, Chosen_combination, Outcome)
+                        )
+                ; 
+                 Kind == 'rune_coverage' ->
+                        (mika_coverage:branch_lead_to_new_rune(Id, Outcome_first) -> 
+                                ((%(Id, Outcome_first) leads to an exception that remains to be covered
+                                        (Chosen_combination = First,
+                                         Outcome = Outcome_first
+                                        )
+                                ;
+                                        choose_combination(Rest, Kind, Chosen_combination, Outcome) 
+                                ))
+                        ;
+                                choose_combination(Rest, Kind, Chosen_combination, Outcome)
                         )
                 )
         ).

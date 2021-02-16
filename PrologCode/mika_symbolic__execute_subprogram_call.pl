@@ -125,8 +125,9 @@ handle_subprogram_call(Functor, Operand, Symbolic, Constraint, Type, Exception) 
                  )
                 )
         ),
-        ((mika_globals:mika_globals__get_NBT('phase', 'post_elaboration'), mika_globals:mika_globals__get_NBT('driver', driver(Subprogram_name))) ->   %we are after the elaboration phase and executing the driver and the target subprogram matches : we nee to monitor the coverage achieved
+        ((mika_globals:mika_globals__get_NBT('phase', 'post_elaboration'), mika_globals:mika_globals__get_NBT('driver', driver(Subprogram_name))) ->   %we are after the elaboration phase and executing the driver and the target subprogram matches : we need to monitor the coverage achieved
                 (%trace,
+                 %06/02/2021 why are we doing this here and not within mika_symbolic?
                  mika_coverage:mika_coverage__current_path_contain_uncovered(Strategy, Current_path_contain_uncovered, Newly_covered),
                  mika_globals:mika_globals__get_NBT('test_driver_test_nb', Test_driver_test_nb),
                  Test_driver_test_nb_1 is Test_driver_test_nb + 1,

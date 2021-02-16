@@ -248,14 +248,19 @@ common_util__create_dummy_name(Dummy_name) :-
         mika_globals:mika_globals__set_NBT(dummy_nb, New_dummy_nb).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %checks whether a term represents an exception (of the form exception(ExceptionName, ListOfCoumpounds] e.g. exception(Exception, [type(Result_type), array(Array), index(Index), predicate(get_element_ground2), message("Run-time constraint error in array access")]) )
-common_util__is_an_exception(T) :-
-        compound(T),
-        T =.. ['exception'|_Arguments].
+common_util__is_an_exception(Exception) :-
+       compound(Exception),
+       Exception =.. ['exception'|_Arguments].
+common_util__get_exception_id(Exception, RuneId) :-
+       compound(Exception),
+       Exception =.. ['exception'|[Arguments]],
+       memberchk(id(RuneId), Arguments).
 %checks whether a term represents a goto (of the form goto(Label))
-common_util__is_a_goto(T) :-
-        compound(T),
-        T =.. ['goto'|_Arguments].
+common_util__is_a_goto(Goto) :-
+       compound(Goto),
+       Goto =.. ['goto'|_Arguments].
 %checks whether a term represents a exit_named_loop (of the form exit_named_loop(To_name))
-common_util__is_a_exit_named_loop(T) :-
-        compound(T),
-        T =.. ['exit_named_loop'|_Arguments].
+common_util__is_a_exit_named_loop(Exit_named_loop) :-
+       compound(Exit_named_loop),
+       Exit_named_loop =.. ['exit_named_loop'|_Arguments].
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

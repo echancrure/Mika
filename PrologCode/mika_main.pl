@@ -28,16 +28,10 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 initialise_globals(Install_dir, Strategy, Debug_mode) :-
+        mika_globals:mika_globals__reset_BT,
         mika_globals:mika_globals__set_NBT('errorMessageNb', 0),	        %number of error messages generated: used to set trace_points in debug mode only
         mika_globals:mika_globals__set_NBT('debug_info', 'pre_elaboration'),    %for debug only
         mika_globals:mika_globals__set_NBT('phase', 'elaboration'),             %initially we are in the elaboration phase: used during cfg building and elaboration control
-        mika_globals:mika_globals__init_BT_path('current_path_bran', []),
-	mika_globals:mika_globals__init_BT_path('current_path_deci', []),
-        mika_globals:mika_globals__init_BT_path('current_path_mcdc_gate', []),
-	mika_globals:mika_globals__init_BT_path('current_path_cond', []),
-	mika_globals:mika_globals__set_BT('call_stack_bran', []),
-	mika_globals:mika_globals__set_BT('call_stack_deci', []),
-	mika_globals:mika_globals__set_BT('call_stack_cond', []),
         mika_globals:mika_globals__set_NBT('covered_bran', []),
         mika_globals:mika_globals__set_NBT('covered_deci', []),
 	mika_globals:mika_globals__set_NBT('covered_cond', []),
@@ -45,7 +39,7 @@ initialise_globals(Install_dir, Strategy, Debug_mode) :-
         mika_globals:mika_globals__set_NBT('path_nb', 0),
         mika_globals:mika_globals__set_NBT('test_driver_test_nb', 0),
 	mika_globals:mika_globals__set_NBT('abandoned_path_nb', 0),	        %counts the number of timed out and unsuccessful labeling tests
-        mika_globals:mika_globals__set_NBT('strategy', Strategy),              %one of branch|decision|condition|mcdc
+        mika_globals:mika_globals__set_NBT('strategy', Strategy),              %one of branch|decision|condition|mcdc|rune_coverage
         mika_globals:mika_globals__set_NBT('install_dir', Install_dir),        %the install dir of the generator executable
         mika_globals:mika_globals__set_NBT('debug_mode', Debug_mode),          %debug or release
         mika_globals:mika_globals__set_NBT('message_mode', Debug_mode),        %debug or release
@@ -55,6 +49,8 @@ initialise_globals(Install_dir, Strategy, Debug_mode) :-
         !.
 %%%
 %only to be used during debuging : not to be used for stand alone executable because of the trace
+%go_trace('E:\\Google Drive\\Mika\\bin\\', 'E:\\Google Drive\\Mika\\examples\\rune\\runex_mika\\', runex, firstcheckcfg, '_', 'no_driver', branch, no, ignored, no, debug, mika_dg_m, 'R').
+%go_trace('C:\\Users\\House\\GoogleDrive\\Mika\\bin\\', 'C:\\Users\\House\\GoogleDrive\\Mika\\examples\\rune\\runex_mika\\', runex, firstcheckcfg, '_', 'no_driver', rune_coverage, no, ignored, no, debug, mika_dg_m, 'R').
 go_trace(Install_dir, Parsed_dir, Target_source_file_name, Target_raw_subprogram_name, Received_line_no, Driver, Strategy, Check_coverage,
    Elaboration, CreateTimeStampedDirectory, Debug_mode, Mika_dg, Coverage_thoroughness) :-
         leash(['call', 'fail', 'exception', 'redo']),                           %skips the exit port during debugging
@@ -251,7 +247,7 @@ set_coverage_thoroughness(Coverage_thoroughness) :-
          Coverage_thoroughness == 'R' ->
                 mika_globals:mika_globals__set_NBT('coverage_thoroughness', 'everything_including_rtl')
         ;
-                common_util:common_util__error(1, "Coverage thoroughness syntax is wrong and ignored: contact Midoan", 'no_error_consequences', [('coverage_thoroughness', Coverage_thoroughness)], 122553, 'mika_main', 'go', 'no_localisation', 'no_extra_info')
+                common_util:common_util__error(1, "Coverage thoroughness syntax is wrong and ignored", 'no_error_consequences', [('coverage_thoroughness', Coverage_thoroughness)], 122553, 'mika_main', 'go', 'no_localisation', 'no_extra_info')
         ).
 %%%
 parse_mika_dg([]).
