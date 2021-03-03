@@ -1134,45 +1134,51 @@ exec(assign(selected(Name, Field), Exp), carry_on) :-
         ).
 %e.g. "birthdays(chris) := 311070" is transformed into up_arr(birthdays, chris, 311070)
 %TODO could be a function returning a variable (e.g. record filed or and array element) that is assigned a value ...
-exec(assign(indexed(Name, Index), Exp), carry_on) :-
+exec(assign(indexed(Name, Index), Exp), Flow) :-
         mika_seav_atts:mika_seav_atts__is_seav(Name),
         !,              %absolutely necessary here
-        symbolically_interpret(Index, Index_symb, Index_const, Index_type, _Exception_),
-	symbolically_interpret(Exp, Exp_symb, Exp_const, Exp_type, _Exception_),
-        symbolically_interpret(Name, Name_symb, Name_const, Name_type, _Exception_),
-        (is_unhandled_type([Index_type, Exp_type, Name_type]) ->
-                (mika_seav_atts:mika_seav_atts__unput(Name, Name_name),
-                 mika_unhandled_atts:mika_unhandled_atts__create(Name, Name_name, object),
-                 common_util__error(4, "Object is assigned an expression with unhandled entities", no_error_consequences, [(name, Name_name)], 4123955, mika_symbolic, exec, no_localisation, no_extra_info)
-                )
+        symbolically_interpret(Index, Index_symb, Index_const, Index_type, Index_exception),
+        (common_util:common_util__is_an_exception(Index_exception) ->
+                Flow = Index_exception
         ;
-                (%mika_seav_atts__get(type, Name, Type_mark),           %removed 23/11/09
-	         %midoan_solver__obtain_basetype(Type_mark, array(_)),  %removed 23/11/09
-	         %09/01/09
-                 %there is a problem here for partially assigned arrays (and records) they should really become 'out' but then this applies to all its components even those who after should become 'in'
-                 %because we are treating arrays and records as a whole we have no choice but but symbolically interpret the entire variable which will become 'in_out' if unused even if in fact it is not 'in'
-                 %mika_seav_atts__get(mode, Name, Mode),
-                 %(Mode == unused ->
-	         %	(%special case to deal with misidentified mode in simple case such as "birthdays(chris) := 311070"
-                 %	 mika_seav_atts__get(name, Name, Name_symb),
-                 %	 midoan_type:midoan_type__variables_declaration([Name_const], variable, Type_mark)
-                 %	 %Name is still unused here as it should be
-                 %	)
-                 %;
-        	 %),
-                 %Index could be a 1 dimentional range in which case it is a slice
-                 ((Index_const = [The_index], nonvar(The_index), The_index = [_From, _To]) ->
-                        midoan_solver__interpret(up_arr_slice(Name_const, Index_const, Exp_const), types(array, _, Exp_type), Constraint, Type, _Exception_)
-	         ;
-                        midoan_solver__interpret(up_arr(Name_const, Index_const, Exp_const), types(array, _, Exp_type), Constraint, Type, _Exception_)
-                 ),
-                 (Type == unhandled_expression ->
+                (Flow = carry_on,
+                 symbolically_interpret(Exp, Exp_symb, Exp_const, Exp_type, _Exception),
+                 symbolically_interpret(Name, Name_symb, Name_const, Name_type, _Exception_),
+                 (is_unhandled_type([Index_type, Exp_type, Name_type]) ->
                         (mika_seav_atts:mika_seav_atts__unput(Name, Name_name),
-                         mika_unhandled_atts:mika_unhandled_atts__create(Name, Name_name, object),
-                         common_util__error(4, "Array could not be updated", no_error_consequences, [(name, Name_name)], 4130051, mika_symbolic, exec, no_localisation, no_extra_info)
+                        mika_unhandled_atts:mika_unhandled_atts__create(Name, Name_name, object),
+                        common_util__error(4, "Object is assigned an expression with unhandled entities", no_error_consequences, [(name, Name_name)], 4123955, mika_symbolic, exec, no_localisation, no_extra_info)
                         )
                  ;
-	                update_var_on_assignement(Name, up_arr(Name_symb, Index_symb, Exp_symb), Constraint)
+                        (%mika_seav_atts__get(type, Name, Type_mark),           %removed 23/11/09
+                        %midoan_solver__obtain_basetype(Type_mark, array(_)),  %removed 23/11/09
+                        %09/01/09
+                        %there is a problem here for partially assigned arrays (and records) they should really become 'out' but then this applies to all its components even those who after should become 'in'
+                        %because we are treating arrays and records as a whole we have no choice but but symbolically interpret the entire variable which will become 'in_out' if unused even if in fact it is not 'in'
+                        %mika_seav_atts__get(mode, Name, Mode),
+                        %(Mode == unused ->
+                        %	(%special case to deal with misidentified mode in simple case such as "birthdays(chris) := 311070"
+                        %	 mika_seav_atts__get(name, Name, Name_symb),
+                        %	 midoan_type:midoan_type__variables_declaration([Name_const], variable, Type_mark)
+                        %	 %Name is still unused here as it should be
+                        %	)
+                        %;
+                        %),
+                        %Index could be a 1 dimentional range in which case it is a slice
+                        ((Index_const = [The_index], nonvar(The_index), The_index = [_From, _To]) ->
+                                midoan_solver__interpret(up_arr_slice(Name_const, Index_const, Exp_const), types(array, _, Exp_type), Constraint, Type, _Exception_)
+                        ;
+                                midoan_solver__interpret(up_arr(Name_const, Index_const, Exp_const), types(array, _, Exp_type), Constraint, Type, _Exception_)
+                        ),
+                        (Type == unhandled_expression ->
+                                (mika_seav_atts:mika_seav_atts__unput(Name, Name_name),
+                                mika_unhandled_atts:mika_unhandled_atts__create(Name, Name_name, object),
+                                common_util__error(4, "Array could not be updated", no_error_consequences, [(name, Name_name)], 4130051, mika_symbolic, exec, no_localisation, no_extra_info)
+                                )
+                        ;
+                                update_var_on_assignement(Name, up_arr(Name_symb, Index_symb, Exp_symb), Constraint)
+                        )
+                        )
                  )
                 )
         ).

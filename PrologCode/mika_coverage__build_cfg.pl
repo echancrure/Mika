@@ -575,8 +575,9 @@ cover(exit_when(Loop_name, bran(Id_bran, deci(Id_deci, Expression))), Flow) :-
                  Flow = carry_on
                 )
         ).
-cover(assign(_Name, Expression), carry_on) :-
+cover(assign(Name, Expression), carry_on) :-
         !,
+        cover_exp(Name),        %added 03/03/2021
         cover_exp(Expression).
 cover(procedure_call(Call), carry_on) :-
         !,
@@ -1000,7 +1001,7 @@ cover_exp((A, B)) :-
         cover_exp(B).
 cover_exp([]) :-
         !.
-cover_exp([F|Rest]) :-	%e.g. for choices
+cover_exp([F|Rest]) :-	%e.g. for choices, indexes
 	!,
 	cover_exp(F),
 	cover_exp(Rest).
@@ -1056,7 +1057,8 @@ cover_exp(Ter_exp) :-
         cover_exp(One),
         cover_exp(Two),
         cover_exp(Three).
-
+%e.g. cover_exp(rune(1, X=0, X)) for a division by 0
+%e.g. rune(1, deci(0, or(0, cond(0, X > tic(tic(Character_15, val), last)), cond(0, X < tic(tic(Character_15, val), first)))), X) for indexed components
 cover_exp(rune(RuneId, _, Original_expression)) :-
         !,
         cover_exp(Original_expression),

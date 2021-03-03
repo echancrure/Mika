@@ -53,7 +53,7 @@ FILE *subprograms;              //contains the list of subprograms contained in 
 #include "transform_path_to_prolog.c" //transform a windows path with '\' and no final '\' to a prolog path containing only '/' and terminating with a '/'
 #include "list_of_not_cross_referenced_operator.c" //09/03/2010 track not actualy user defined operators   
 
-#define YYSTACK_SIZE 1000       //Parser generator constant
+#define YYSTACK_SIZE 1000               //Parser generator constant
 #define SAFETY 5                        //number of characters added to malloc
 #define COND 0
 #define GATE 1
@@ -184,7 +184,7 @@ void build_condition(struct id_decision, char **, struct unit_type *, int, int);
         struct id_ref_t  id_ref;            // only for ADA identifiers, character literals, string literals, operators
         struct id_decision id_deci;         // for relation and expression_2 to indicate if we are within a decision
         struct id_subprogram_t id_subprogram;       //for subprograms only
-        struct true_line_column_t true_line_column; //used for recording line and columns of detected bran,deci,cond, gate and rune
+        struct true_line_column_t true_line_column; //used for recording line and columns of detected bran, deci, cond, gate and rune
        }
 
 %token PAC_START_ELABORATION
@@ -1898,11 +1898,27 @@ operator_symbol_or_string : string_literal
 /*can be a array access, a function/procedure call, a type conversion, or a subtype_indication with index_contraint */
 /*we will have to differentiate between many things*/
 indexed_component : name '(' value_list ')'
-                    {$$ = malloc(SAFETY+strlen($1)+strlen($3)+14);
+                    {$$ = malloc(SAFETY+strlen(tmp_s)+strlen($1)+strlen($1)+strlen($1)+strlen($3)+strlen($3)+strlen($3)+100);
+                     itoa(runtime_nb++, tmp_s, 10);
+                     print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1); 
                      strcpy($$, "indexed(");
                      strcat($$, $1);
                      strcat($$, ", [");
+                     strcat($$, "rune(");
+                     strcat($$, tmp_s);
+                     strcat($$, ", deci(0, or(0, cond(0, ");
                      strcat($$, $3);
+                     strcat($$, " > ");
+                     strcat($$, "tic(");
+                     strcat($$, $1);
+                     strcat($$, ", last)), cond(0, ");
+                     strcat($$, $3);
+                     strcat($$, " < ");
+                     strcat($$, "tic(");
+                     strcat($$, $1);
+                     strcat($$, ", first)))) ,");
+                     strcat($$, $3);    //the original index
+                     strcat($$, ")");
                      strcat($$, "])");
                      free($1);
                      free($3);

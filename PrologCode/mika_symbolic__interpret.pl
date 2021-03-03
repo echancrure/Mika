@@ -140,10 +140,11 @@ symbolically_interpret(up_rec(Record_exp, Field, Exp), Symb, Const, Type, _Excep
                 )
         ).
 %10/03/05 necessary during assign transformation in exec(assign(...))
+%03/03/2021 dead code?
 symbolically_interpret(up_arr(Array_exp, Index, Exp), Symb, Const, Type, _Exception_) :-
         symbolically_interpret(Exp, Symbolic_exp, Constraint_exp, Type_exp, _Exception_),
 	symbolically_interpret(Index, Symbolic_index, Constraint_index, Type_index, _Exception_),
-	symbolically_interpret(Array_exp, Symbolic_array_exp, Constraint_array_exp, Type_array_exp, _Exception_),
+        symbolically_interpret(Array_exp, Symbolic_array_exp, Constraint_array_exp, Type_array_exp, _Exception_),
         (is_unhandled_type([Type_exp, Type_index, Type_array_exp]) ->
                 (common_util__error(6, "Unhandled array update", "Will propagate upwards", [(up_arr(array_exp, index, exp), up_arr(Array_exp, Index, Exp))], 614534, mika_symbolic, symbolically_interpret, no_localisation, "Subset needs enlarging"),
                  Symb = unhandled_expression,
@@ -153,11 +154,11 @@ symbolically_interpret(up_arr(Array_exp, Index, Exp), Symb, Const, Type, _Except
         ;
                 ((Constraint_index = [The_index], nonvar(The_index), The_index = [_From, _To]) ->
                         (midoan_solver__interpret(up_arr_slice(Constraint_array_exp, Constraint_index, Constraint_exp), types(array, _, Type_exp), Const, Type, _Exception_),
-                         Symb = up_arr_slice(Symbolic_array_exp, Symbolic_index, Symbolic_exp)
+                        Symb = up_arr_slice(Symbolic_array_exp, Symbolic_index, Symbolic_exp)
                         )
-	         ;
+                ;
                         (midoan_solver__interpret(up_arr(Constraint_array_exp, Constraint_index, Constraint_exp), types(array, _, Type_exp), Const, Type, _Exception_),
-                         Symb = up_arr(Symbolic_array_exp, Symbolic_index, Symbolic_exp)
+                        Symb = up_arr(Symbolic_array_exp, Symbolic_index, Symbolic_exp)
                         )
                 )
         ).
@@ -697,27 +698,31 @@ symbolically_interpret(deci(Id_deci, Expression), Symb, Const, Type, _Exception_
 	).
 %%%
 symbolically_interpret(rune(RuneId, Exception_constraint, Original_expression), Symb, Const_exp, Type, Exception) :-
-        %trace,
         %need to check if works for inner exception could occur in expressions such as 1/(1/B))
         (mika_globals:mika_globals__get_NBT(strategy, rune_coverage)  ->
                 (       (mika_coverage:check_runes_state(remain_to_be_covered, RuneId),
-                         symbolically_interpret_boolean(Exception_constraint, Symb, Const_exp, Type, _E),
-                         (midoan_solver__sdl(Const_exp) ->
-                                Exception = exception([id(RuneId), symb(Symb)])
+                         (symbolically_interpret_boolean(Exception_constraint, Symb, Const_exp, Type, _E) ->
+                                (midoan_solver__sdl(Const_exp) ->
+                                        Exception = exception([id(RuneId), symb(Symb)])
+                                ;
+                                        fail    %the exception cannot be raised: backtrack
+                                )
                          ;
-                                fail    %the exception cannot be raised: backtrack
+                                fail    %23/02/21 hack the runeException_contraint cannot be symbolically interpreted because it is malformed
                          )
                         )
                 ;%deliberate choice point
                         (mika_coverage:add_false_rune_to_current_path(RuneId),      %do this first
-                         mika_coverage:mika_coverage__get_latest_traversed(branch, (Id, Truth)),
-                         (mika_coverage:branch_lead_to_new_rune(Id, Truth) ->
-                                symbolically_interpret(Original_expression, Symb, Const_exp, Type, Exception)
-                          ;
-                                fail
+                         (mika_coverage:mika_coverage__get_latest_traversed(branch, (Id, Truth)) ->
+                                (mika_coverage:branch_lead_to_new_rune(Id, Truth) ->
+                                        symbolically_interpret(Original_expression, Symb, Const_exp, Type, Exception)
+                                ;
+                                        fail
+                                )
+                         ;
+                                symbolically_interpret(Original_expression, Symb, Const_exp, Type, Exception) %23/02/21 hack in case we are in elboration
                          )
                         )
-
                 )
         ;
                 (%carry on with normal interpretation of the expression without raising the exception
