@@ -106,6 +106,7 @@ int debugMode = 0;      //flag to indicate if we are in debug mode set by by -d 
 int is_standard = 1;    //flag to indicate that we are parsing ada predefined standard package
 int is_ascii = 0;       //flag to indicate that we are within a 'selected(Ascii, ...)' construct (Total hack see 28/09/04 notes)
 int in_a_pragma = 0;    //flag to indicate that we are within a pragma : changes the behaviour of handle_identifier (if unxrefed return id 'as is', e.g. 'C' calling convention will be returned as 'C' within a pragma)
+char *indexed_component_name;   //temporary index_component_name to deal with runes in indices
 
 int old_lineno = 0;
 int total_line_no = 0;
@@ -388,6 +389,7 @@ void build_condition(struct id_decision, char **, struct unit_type *, int, int);
 %type <id> compound_name
 %type <id> direct_name
 %type <id> indexed_component
+%type <id> value_list_sp
 %type <id> value_list
 %type <id> value
 %type <id> selected_component
@@ -1897,33 +1899,69 @@ operator_symbol_or_string : string_literal
 
 /*can be a array access, a function/procedure call, a type conversion, or a subtype_indication with index_contraint */
 /*we will have to differentiate between many things*/
-indexed_component : name '(' value_list ')'
-                    {$$ = malloc(SAFETY+strlen(tmp_s)+strlen($1)+strlen($1)+strlen($1)+strlen($3)+strlen($3)+strlen($3)+100);
-                     itoa(runtime_nb++, tmp_s, 10);
-                     print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1); 
+//modified March 2021 to accomodate multiple arguments/indices. Use of global variable is niot nice and will not work in complex recursive situations, but this an emergency
+indexed_component : name {indexed_component_name = malloc(strlen($1)+1); 
+                          strcpy(indexed_component_name, $1);
+                         } 
+                    '(' value_list_sp ')'
+                    {$$ = malloc(SAFETY+strlen($1)+strlen($4)+13+1);
                      strcpy($$, "indexed(");
                      strcat($$, $1);
                      strcat($$, ", [");
-                     strcat($$, "rune(");
-                     strcat($$, tmp_s);
-                     strcat($$, ", deci(0, or(0, cond(0, ");
-                     strcat($$, $3);
-                     strcat($$, " > ");
-                     strcat($$, "tic(");
-                     strcat($$, $1);
-                     strcat($$, ", last)), cond(0, ");
-                     strcat($$, $3);
-                     strcat($$, " < ");
-                     strcat($$, "tic(");
-                     strcat($$, $1);
-                     strcat($$, ", first)))) ,");
-                     strcat($$, $3);    //the original index
-                     strcat($$, ")");
+                     strcat($$, $4);
                      strcat($$, "])");
                      free($1);
-                     free($3);
+                     free($4);
+                     free(indexed_component_name);
                     }
                   ;
+
+value_list_sp : value                    
+                {itoa(runtime_nb++, tmp_s, 10);
+                 print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1);
+                 $$ = malloc(SAFETY+strlen(tmp_s)+strlen($1)+strlen($1)+strlen($1)+strlen(indexed_component_name)+strlen(indexed_component_name)+76);
+                 strcpy($$, "rune(");
+                 strcat($$, tmp_s);
+                 strcat($$, ", deci(0, or(0, cond(0, ");
+                 strcat($$, $1);
+                 strcat($$, " > ");
+                 strcat($$, "tic(");
+                 strcat($$, indexed_component_name);
+                 strcat($$, ", last)), cond(0, ");
+                 strcat($$, $1);
+                 strcat($$, " < ");
+                 strcat($$, "tic(");
+                 strcat($$, indexed_component_name);
+                 strcat($$, ", first)))) ,");
+                 strcat($$, $1);    //the original index
+                 strcat($$, ")");
+                 free($1);
+                }
+              | value_list_sp ',' value  
+                {itoa(runtime_nb++, tmp_s, 10);
+                 print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1);
+                 $$ = malloc(SAFETY+strlen($1)+strlen(tmp_s)+strlen($3)+strlen($3)+strlen($3)+strlen(indexed_component_name)+strlen(indexed_component_name)+78);
+                 strcpy($$, $1);
+                 strcat($$, ", ");
+                 strcat($$, "rune(");
+                 strcat($$, tmp_s);
+                 strcat($$, ", deci(0, or(0, cond(0, ");
+                 strcat($$, $3);
+                 strcat($$, " > ");
+                 strcat($$, "tic(");
+                 strcat($$, indexed_component_name);
+                 strcat($$, ", last)), cond(0, ");
+                 strcat($$, $3);
+                 strcat($$, " < ");
+                 strcat($$, "tic(");
+                 strcat($$, indexed_component_name);
+                 strcat($$, ", first)))) ,");
+                 strcat($$, $3);    //the original index
+                 strcat($$, ")");
+                 free($1);
+                 free($3);
+                }
+           ;
 
 value_list : value                      {$$ = $1;}
            | value_list ',' value       {$$ = malloc(SAFETY+strlen($1)+strlen($3)+3);

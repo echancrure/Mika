@@ -582,7 +582,8 @@ cover(assign(Name, Expression), carry_on) :-
 cover(procedure_call(Call), carry_on) :-
         !,
         (Call = indexed(Name_exp, Operand) ->
-                (handle_selected_name(Name_exp, Functor),       %imported from mika_symbolic__execute_util.pl
+                (%trace,
+                 handle_selected_name(Name_exp, Functor),       %imported from mika_symbolic__execute_util.pl
                  cover_exp(Operand)
                 )
         ;

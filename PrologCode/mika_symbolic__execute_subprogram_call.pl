@@ -15,10 +15,12 @@
 %The Symbolic, Constraint and Type output variables are needed during interpretation only (i.e. for function calls) :
 %  handled with mika_symbolic__interpret.pl
 % procedure calls are actual statements: handled within mika_symbolic__execute.pl
-handle_subprogram_call(Functor, Operand, Symbolic, Constraint, Type, Exception) :-
+handle_subprogram_call(Functor, Operand_dirty, Symbolic, Constraint, Type, Exception) :-
+        %trace,
         mika_globals:mika_globals__get_NBT('strategy', Strategy),                  %global branch, decision or condition coverage desired
         mika_sub_atts:mika_sub_atts__get('status', Functor, Status),
         mika_sub_atts:mika_sub_atts__get('name', Functor, Subprogram_name),
+        remove_runes(Operand_dirty, Operand),
         (Status == 'bodied' ->    %a normal subprogram whose body is available
                 (mika_coverage:mika_coverage__update_call_stack('push', Strategy),
                  mika_coverage:mika_coverage__add_to_current_path('condition', (start(Subprogram_name), true)),
@@ -143,6 +145,15 @@ handle_subprogram_call(Functor, Operand, Symbolic, Constraint, Type, Exception) 
         ;
                 true
         ).
+
+remove_runes([], []).
+remove_runes([Operand_dirty|Rest_dirty], [Operand|Rest]) :-
+        (Operand_dirty = rune(_,_,Operand) ->
+                true
+        ;
+                Operand = Operand_dirty
+        ),
+        remove_runes(Rest_dirty, Rest).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 create_subprogram_rename(Sub_rename, Orig_sub_var1) :-
         rename_of_rename(Orig_sub_var1, Orig_sub_var),

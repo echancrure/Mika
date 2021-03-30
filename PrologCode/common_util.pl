@@ -47,7 +47,7 @@ common_util__error(Error_severity, Error_message, Error_consequences, ArgumentsL
         (Message_mode == debug ->
                 (mika_globals:mika_globals__get_NBT(errorMessageNb, ErrorNb),
                  ErrorNb1 is ErrorNb + 1,
-                 %(ErrorNb1 == 188 -> trace ; true),
+                 %(ErrorNb1 == 34 -> trace ; true),
                  format(user_error, "Error Nb: ~w", [ErrorNb1]),
                  mika_globals:mika_globals__set_NBT(errorMessageNb, ErrorNb1),
                  common_util__error2(Error_severity, Error_message, Error_consequences, ArgumentsL, Error_code, From_module, From_predicate, Localisation, Extra_info)
