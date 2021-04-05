@@ -52,6 +52,7 @@ FILE *subprograms;              //contains the list of subprograms contained in 
 #include "getdatetime.c"        //generate a pointer to a string formating the current date and time in format yy_mm_dd_hh_mm_ss
 #include "transform_path_to_prolog.c" //transform a windows path with '\' and no final '\' to a prolog path containing only '/' and terminating with a '/'
 #include "list_of_not_cross_referenced_operator.c" //09/03/2010 track not actualy user defined operators   
+#include "stack.c"              //no error-checking stack of strings implementation
 
 #define YYSTACK_SIZE 1000               //Parser generator constant
 #define SAFETY 5                        //number of characters added to malloc
@@ -71,6 +72,7 @@ char gnatlsExe[_MAX_PATH];          // string denoting the name of the gnat ls e
 char gnatbindExe[_MAX_PATH];          // string denoting the name of the gnat bind executable
 char user_gnatproject_call_str[_MAX_PATH*10];
 char user_gnatls_call_str[_MAX_PATH*10];
+struct stack* myStack;
 
 void find_filename_path(char *, char *, char **, char **);
 char *handle_operator_calls(struct id_ref_t);
@@ -106,7 +108,6 @@ int debugMode = 0;      //flag to indicate if we are in debug mode set by by -d 
 int is_standard = 1;    //flag to indicate that we are parsing ada predefined standard package
 int is_ascii = 0;       //flag to indicate that we are within a 'selected(Ascii, ...)' construct (Total hack see 28/09/04 notes)
 int in_a_pragma = 0;    //flag to indicate that we are within a pragma : changes the behaviour of handle_identifier (if unxrefed return id 'as is', e.g. 'C' calling convention will be returned as 'C' within a pragma)
-char *indexed_component_name;   //temporary index_component_name to deal with runes in indices
 
 int old_lineno = 0;
 int total_line_no = 0;
@@ -1899,9 +1900,8 @@ operator_symbol_or_string : string_literal
 
 /*can be a array access, a function/procedure call, a type conversion, or a subtype_indication with index_contraint */
 /*we will have to differentiate between many things*/
-//modified March 2021 to accomodate multiple arguments/indices. Use of global variable is niot nice and will not work in complex recursive situations, but this an emergency
-indexed_component : name {indexed_component_name = malloc(strlen($1)+1); 
-                          strcpy(indexed_component_name, $1);
+//modified March 2021 to accomodate multiple arguments/indices. Use of global variable is not nice and will not work in complex recursive situations, but this an emergency
+indexed_component : name {push(&myStack, $1);
                          } 
                     '(' value_list_sp ')'
                     {$$ = malloc(SAFETY+strlen($1)+strlen($4)+13+1);
@@ -1912,13 +1912,14 @@ indexed_component : name {indexed_component_name = malloc(strlen($1)+1);
                      strcat($$, "])");
                      free($1);
                      free($4);
-                     free(indexed_component_name);
+                     pop(&myStack);
                     }
                   ;
 
 value_list_sp : value                    
                 {itoa(runtime_nb++, tmp_s, 10);
                  print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1);
+                 char* indexed_component_name = top(myStack);
                  $$ = malloc(SAFETY+strlen(tmp_s)+strlen($1)+strlen($1)+strlen($1)+strlen(indexed_component_name)+strlen(indexed_component_name)+76);
                  strcpy($$, "rune(");
                  strcat($$, tmp_s);
@@ -1940,6 +1941,7 @@ value_list_sp : value
               | value_list_sp ',' value  
                 {itoa(runtime_nb++, tmp_s, 10);
                  print_coverage_details(RUNE, tmp_s, current_unit, yylineno, column+1);
+                 char* indexed_component_name = top(myStack);
                  $$ = malloc(SAFETY+strlen($1)+strlen(tmp_s)+strlen($3)+strlen($3)+strlen($3)+strlen(indexed_component_name)+strlen(indexed_component_name)+78);
                  strcpy($$, $1);
                  strcat($$, ", ");
@@ -4624,8 +4626,9 @@ int main(int argc, char *argv[])    //argc is the total number of strings in the
     decl_init_start();          //for declaration of identifiers data structure
     unxrefed_init_start();      //for un crossreferenced variables (should not exist but does for dead code and some gnat run time libraries variables)
     ref_init_start();           //for reference of identifiers data structure
-    init_queue();                   //for binding information data structure
+    init_queue();               //for binding information data structure
     init_list_operators();      //for list of non user defined operators
+    myStack = init();           //stack of indexed_component_name
 /*** END ***/
     strcpy(subprograms_file, target_dir);
     strcat(subprograms_file, "\\");
