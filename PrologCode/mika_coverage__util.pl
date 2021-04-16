@@ -13,7 +13,7 @@
 % utilitarian predicates used during coverage analysis of the parsed files
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 util_get_globals(Kind, Global_covered, Global_current_path, Global_overall) :-
-	((Kind == 'branch' ; Kind == 'rune_coverage') ->
+	((Kind == 'branch' ; Kind == 'rune_coverage' ; Kind == 'query') ->
                 (Global_covered = 'covered_bran',
                  Global_current_path = 'current_path_bran'
                 )
@@ -38,7 +38,7 @@ util_get_globals(Kind, Global_covered, Global_current_path, Global_overall) :-
         ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 util_get_stack_name(Kind, Stack_name) :-
-	((Kind == 'branch' ; Kind == 'rune_coverage') ->
+	((Kind == 'branch' ; Kind == 'rune_coverage' ; Kind == 'query') ->
 		Stack_name = 'call_stack_bran'
 	;
 	 (Kind == 'decision' ; Kind == 'mcdc') ->
@@ -50,7 +50,7 @@ util_get_stack_name(Kind, Stack_name) :-
 		common_util:common_util__error(10, "Unknown kind in stack", "cannot proceed", [('kind', Kind)], 104512, 'mika_coverage__util', 'util_get_stack_name', 'no_localisation', "Is unexpected")
 	).
 
-util_get_stack(Kind, Current_stack) :-	% a query
+util_get_stack(Kind, Current_stack) :-
 	util_get_stack_name(Kind, Stack_name),
 	mika_globals:mika_globals__get_BT(Stack_name, Current_stack).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -62,6 +62,10 @@ util_print_debug :-
 util_print_debug :-
         arc_rune(BranId, Bool, RuneIdL),
         format('debug_output', "arc_rune(~w,\t~w,\t~w).\n", [BranId, Bool, RuneIdL]),
+	fail.
+util_print_debug :-
+        arc_query(BranId, Bool, SecretMikaCallIdL),
+        format('debug_output', "arc_query(~w,\t~w,\t~w).\n", [BranId, Bool, SecretMikaCallIdL]),
 	fail.
 util_print_debug :-
         call_bran(Start, Subprogram_name, Bool),
@@ -91,9 +95,13 @@ util_print_debug :-
 	rune_successor((From, Truth), L),
 	format('debug_output', "rune_successor((~w,\t~w),\t~w).\n", [From, Truth, L]),
 	fail.
+util_print_debug :-
+	query_successor((From, Truth), L),
+	format('debug_output', "query_successor((~w,\t~w),\t~w).\n", [From, Truth, L]),
+	fail.
 util_print_debug.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Called twice: for elaboration first and then for the target subprogram
+%Called twice: for elaboration first and then after elaboration for the target subprogram
 %the calculation for a single arc is fine
 % but we re-apply it blindly for all arcs and that is not efficient at all but it works fine
 % this is not a simple problem [see Sept. 06] and unless efficiency becomes an issue I would be reluctant to embark on changing it.
@@ -102,7 +110,7 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
         (Original_strategy == 'mcdc' ->
                 Strategy = 'decision'
         ;
-         Original_strategy == 'rune_coverage' ->        %we get the successors of branches first
+         (Original_strategy == 'rune_coverage' ; Original_strategy == 'query')  ->      %we get the successors of branches first
                 Strategy = 'branch'
         ;
                 Strategy = Original_strategy
@@ -120,6 +128,13 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
                         common_util__error(10, "rune coverage of renames is not handled", no_error_consequences, [("Subprogram's name", Original_Subprogram_name)], 10110221, mika_coverage, calculate_successors, no_localisation, "Feature needs to be implemented")
                 ;
                         calculate_rune_successors(Original_Subprogram_name)
+                )
+        ;
+         Original_strategy == 'query' ->
+                (is_a_rename(Original_Subprogram_name, Target_subprogram_name) ->
+                        common_util__error(10, "query coverage of renames is not handled", no_error_consequences, [("Subprogram's name", Original_Subprogram_name)], 10110222, mika_coverage, calculate_successors, no_localisation, "Feature needs to be implemented")
+                ;
+                        calculate_query_successors(Original_Subprogram_name)
                 )
         ;
                 true
@@ -303,7 +318,7 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
                 mika_list:mika_list__union(RuneBranL, RuneRest, RuneL).
 
         crs_individual_branch(BranId, Truth) :-
-                (rune_successor((BranId, Truth), RuneBranL) ->
+                (rune_successor((BranId, Truth), _RuneBranL) ->
                         true
                 ;
                         (successor((BranId, Truth), SuccessorL),
@@ -314,6 +329,44 @@ calculate_successors(Original_strategy, Original_Subprogram_name) :-
                                 RuneBranL = RuneL
                          ),
                          assert(rune_successor((BranId, Truth), RuneBranL))
+                        )
+                ).
+%%%
+%really poor: using above as template: must refactor
+        calculate_query_successors(Subprogram_name) :-
+                %trace,
+                successor((start(Subprogram_name), true), SuccessorL),  %the branches
+                (SuccessorL = [] ->     %a subprogram with no branches
+                        (arc_query(start(Subprogram_name), true, QueryL) ->
+                                true    
+                        ;
+                                QueryL = []      %no queries in this subprogram with no branches
+                        )
+                ;
+                        cqs_individual_branches(SuccessorL, QueryL)
+                ),
+                assert(query_successor((start(Subprogram_name), 'true'), QueryL)),
+                !.
+
+        cqs_individual_branches([], []).
+        cqs_individual_branches([(BranId, Truth)|Rest], QueryL) :-
+                cqs_individual_branch(BranId, Truth),
+                query_successor((BranId, Truth), QueryBranL),
+                cqs_individual_branches(Rest, QueryRest),
+                mika_list:mika_list__union(QueryBranL, QueryRest, QueryL).
+
+        cqs_individual_branch(BranId, Truth) :-
+                (query_successor((BranId, Truth), _QueryBranL) ->
+                        true
+                ;
+                        (successor((BranId, Truth), SuccessorL),
+                         cqs_individual_branches(SuccessorL, QueryL),
+                         (arc_query(BranId, Truth, QueryIdL) -> 
+                                append(QueryIdL, QueryL, QueryBranL)
+                         ;
+                                QueryBranL = QueryL
+                         ),
+                         assert(query_successor((BranId, Truth), QueryBranL))
                         )
                 ).
 

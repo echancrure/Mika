@@ -211,7 +211,8 @@ mika_print__effects([SEAV|Rest], Kind) :-
 %REM but be careful before breaking it!
 mika_print__solutions([], _, _, _).
 mika_print__solutions([SEAV|Rest], Kind, Subprogram_name, ParamL_driver) :-
-	mika_seav_atts:mika_seav_atts__get('name', SEAV, Name),
+	%trace,
+        mika_seav_atts:mika_seav_atts__get('name', SEAV, Name),
         %(Name == 'ch8_6.ads:15:1:len2' -> trace ; true),
         mika_symbolic:mika_symbolic__parse(Name, File_name, _File_extension, _Line, _Column, Id),
         mika_globals:mika_globals__get_NBT('debug_mode', Debug_mode),  %debug or release
@@ -219,6 +220,12 @@ mika_print__solutions([SEAV|Rest], Kind, Subprogram_name, ParamL_driver) :-
                 format('answer_output', "~s", [Name])
         ;
                 format('answer_output', "~s", [Id])
+        ),
+        mika_globals:mika_globals__get_NBT('strategy', Strategy),
+        ((Strategy == 'query', Kind == 'input_value') ->
+                format('query_output', "      \"~w\":", [Id])
+        ;
+                true
         ),
 	(memberchk(driver(Name, Driver_name, _), ParamL_driver) ->      %it is a parameter
                 user:file_name_without_extension_to_package_name(File_name, Current_TP_stream)  %see issue "Does not work with krunched file names"
@@ -246,18 +253,27 @@ mika_print__solutions([SEAV|Rest], Kind, Subprogram_name, ParamL_driver) :-
         mika_seav_atts:mika_seav_atts__get(Kind, SEAV, Value),
         (Kind == 'constraint' ->
                 (format(Current_TP_stream, "      --     ", []),	%commented out non initialiased value (still printed for expidency)
-                        mika_globals:mika_globals__set_NBT('comment_out', 'yes'),			%ugly non logical var
-                        print_solution_allinit(Value, Kind, Driver_name, Is_special_type, Current_TP_stream),
-                        mika_globals:mika_globals__set_NBT('comment_out', 'no'),
-                        format(Current_TP_stream, ";\n", []),
-                        print_solution_noninit_or_floats(Value, Driver_name, Is_special_type, Current_TP_stream)		%individualises the elements of composite types
+                 mika_globals:mika_globals__set_NBT('comment_out', 'yes'),			%ugly non logical var
+                 print_solution_allinit(Value, Kind, Driver_name, Is_special_type, Current_TP_stream),
+                 mika_globals:mika_globals__set_NBT('comment_out', 'no'),
+                 format(Current_TP_stream, ";\n", []),
+                 print_solution_noninit_or_floats(Value, Driver_name, Is_special_type, Current_TP_stream)		%individualises the elements of composite types
                 )
         ;
          Kind == 'input_value' ->
                 (format(Current_TP_stream, "      ", []),	%for indentation purposes only
-                        print_solution_allinit(Value, Kind, Driver_name, Is_special_type, Current_TP_stream),
-                        format(Current_TP_stream, ";\n", [])
+                 print_solution_allinit(Value, Kind, Driver_name, Is_special_type, Current_TP_stream),
+                 format(Current_TP_stream, ";\n", [])
                 )
+        ),
+        ((Strategy == 'query', Kind == 'input_value') ->
+                (Rest == [] ->
+                        true
+                ;
+                        format('query_output', ",\n", [])
+                )
+        ;
+                true
         ),
         format('answer_output', "\n", []),
         mika_print__solutions(Rest, Kind, Subprogram_name, ParamL_driver).
@@ -283,9 +299,10 @@ print_solution_allinit(Value, Kind, Driver_name, Is_special_type, Current_TP_str
          Kind == 'constraint' ->	%for output values
 	        format(Current_TP_stream, " = ", [])
         ),
-        print_solution(Type, Value, Is_special_type, Current_TP_stream).
+        mika_globals:mika_globals__get_NBT('strategy', Strategy),
+        print_solution(Type, Value, Is_special_type, Current_TP_stream, Kind, Strategy).
 
-print_solution(array(_), Value, Is_special_type, Current_TP_stream) :-
+print_solution(array(_), Value, Is_special_type, Current_TP_stream, Kind, Strategy) :-
         !,                      % an array
         midoan_array:midoan_array__get_all_index_elements(Value, Indice_elements),
         midoan_array:midoan_array__get_type_var(Value, Type_var),
@@ -303,7 +320,7 @@ print_solution(array(_), Value, Is_special_type, Current_TP_stream) :-
                                         % '(array_type'first..array_type'last [, repeated for all dimensions] => an_element)'
                 (format(Current_TP_stream, "(", []),
                  format(answer_output, "(", []),
-                 ps_print_indexes_range(Type_var, Current_TP_stream),                             %prints 'array_type'first..array_type'last'
+                 ps_print_indexes_range(Type_var, Current_TP_stream, Kind, Strategy),                             %prints 'array_type'first..array_type'last'
                  format(Current_TP_stream, " => ", []),
                  format(answer_output, " => ", []),
                  midoan_type:midoan_type__obtain_parenttype(Component_type_var, Component_basetype_var),        %changed 26/11/09 was obtain_basetype
@@ -314,14 +331,14 @@ print_solution(array(_), Value, Is_special_type, Current_TP_stream) :-
                  midoan_labeling:midoan_labeling__reals(RL),
                  !,
                  midoan_solver:midoan_solver__get_type_from_value(Element_var, Type_element_var),
-                 print_solution(Type_element_var, Element_var, Is_special_type, Current_TP_stream),
+                 print_solution(Type_element_var, Element_var, Is_special_type, Current_TP_stream, Kind, Strategy),
                  format(Current_TP_stream, ")", []),
                  format(answer_output, ")", [])
                 )
         ;
-                ps_print_array_solution(Indice_elements, Is_special_type, Current_TP_stream)
+                ps_print_array_solution(Indice_elements, Is_special_type, Current_TP_stream, Kind, Strategy)
         ).
-print_solution('record', Value, Is_special_type, Current_TP_stream) :-
+print_solution('record', Value, Is_special_type, Current_TP_stream, Kind, Strategy) :-
         !,                      % a record
         format('answer_output', "(", []),
         (Is_special_type = true(Wrap, _Unwrap) ->
@@ -335,11 +352,11 @@ print_solution('record', Value, Is_special_type, Current_TP_stream) :-
 	         format(Current_TP_stream, "null record", [])
                 )
         ;
-                print_record_solution(Type_field_values, Current_TP_stream)
+                print_record_solution(Type_field_values, Current_TP_stream, Kind, Strategy)
         ),
         format('answer_output', ")", []),
 	format(Current_TP_stream, ")", []).
-print_solution('base_enumeration', Value, Is_special_type, Current_TP_stream) :-
+print_solution('base_enumeration', Value, Is_special_type, Current_TP_stream, _Kind, _Strategy) :-
 	!,			%an enumeration literal
 	(midoan_enum:midoan_enum__ground(Value) ->
 		(get_enum_representation(Value, Is_a_char, Full_name, Representation),  %e.g. Full_name is date.ads:2:49:sun, Representation is Sun
@@ -372,7 +389,7 @@ print_solution('base_enumeration', Value, Is_special_type, Current_TP_stream) :-
 		 format(Current_TP_stream, "_", [])
 		)
 	).
-print_solution('modular_integer', Value, Is_special_type, Current_TP_stream) :-
+print_solution('modular_integer', Value, Is_special_type, Current_TP_stream, _Kind, _Strategy) :-
 	!,
 	(midoan_modular_integer:midoan_modular_integer__ground(Value) ->
 		(midoan_modular_integer:midoan_modular_integer__get('value', Value, Value_value),
@@ -389,16 +406,21 @@ print_solution('modular_integer', Value, Is_special_type, Current_TP_stream) :-
 		 format(Current_TP_stream, "_", [])
 		)
 	).
-print_solution('ground', Value, Is_special_type, Current_TP_stream) :-
+print_solution('ground', Value, Is_special_type, Current_TP_stream, Kind, Strategy) :-
         !,                      %a number
         format('answer_output', "~w", Value),
         (Is_special_type = true(Wrap, _Unwrap) ->
                 format(Current_TP_stream, "~w(~w)", [Wrap, Value])
         ;
                 format(Current_TP_stream, "~w", Value)
+        ),
+        ((Kind == 'input_value', Strategy = 'query') ->
+                format('query_output', "\"~w\"", Value)
+        ;
+                true
         ).
 %an unknown output value (non-initialised variable)
-print_solution(_, _, _Is_special_type, Current_TP_stream) :-
+print_solution(_, _, _Is_special_type, Current_TP_stream, _Kind, _Strategy) :-
 	!,
 	format('answer_output', "_ ", []),
 	format(Current_TP_stream, "_ ", []).
@@ -423,53 +445,53 @@ print_solution(_, _, _Is_special_type, Current_TP_stream) :-
 %%%
         %prints the values of records
         %identical structure to print_record_range/1
-        print_record_solution([(Type_name, Field, Element)], Current_TP_stream) :-    %single component record
+        print_record_solution([(Type_name, Field, Element)], Current_TP_stream, Kind, Strategy) :-    %single component record
                 !,
                 mika_symbolic:mika_symbolic__parse(Field, _File_name, _File_extension, _Line, _Column, Field_id),
                 format('answer_output', "~w => ", [Field_id]),
                 format(Current_TP_stream, "~w => ", [Field_id]),
                 midoan_solver:midoan_solver__get_type_from_value(Element, Type),
                 is_special_type(Type_name, Is_special_type),
-                print_solution(Type, Element, Is_special_type, Current_TP_stream).
-        print_record_solution(Type_field_valuesL, Current_TP_stream) :-
+                print_solution(Type, Element, Is_special_type, Current_TP_stream, Kind, Strategy).
+        print_record_solution(Type_field_valuesL, Current_TP_stream, Kind, Strategy) :-
                 !,
-                print_multi_record_solution(Type_field_valuesL, Current_TP_stream).
+                print_multi_record_solution(Type_field_valuesL, Current_TP_stream, Kind, Strategy).
 %%%
-                print_multi_record_solution([(Type_name, _, Element)|Rest], Current_TP_stream) :-
+                print_multi_record_solution([(Type_name, _, Element)|Rest], Current_TP_stream, Kind, Strategy) :-
                         is_special_type(Type_name, Is_special_type),
                         midoan_solver:midoan_solver__get_type_from_value(Element, Type),
-                        print_solution(Type, Element, Is_special_type, Current_TP_stream),
+                        print_solution(Type, Element, Is_special_type, Current_TP_stream, Kind, Strategy),
                         (Rest == [] ->
                                 true
                         ;
                                 (format('answer_output', ", ", []),
                                  format(Current_TP_stream, ", ", []),
                                  break_lines(Current_TP_stream),
-                                 print_multi_record_solution(Rest, Current_TP_stream)
+                                 print_multi_record_solution(Rest, Current_TP_stream, Kind, Strategy)
                                 )
                         ).
 %%%
-        ps_print_indexes_range(Type_var, Current_TP_stream) :-
+        ps_print_indexes_range(Type_var, Current_TP_stream, Kind, Strategy) :-
                 midoan_type:midoan_type__get_attribute(Type_var, 'dimensions', Dimensions),
-                pspir_print_indexes_range(Type_var, 1, Dimensions, Current_TP_stream).
+                pspir_print_indexes_range(Type_var, 1, Dimensions, Current_TP_stream, Kind, Strategy).
 %%%
-                pspir_print_indexes_range(Type_var, Dim, Dimensions, Current_TP_stream) :-
+                pspir_print_indexes_range(Type_var, Dim, Dimensions, Current_TP_stream, Kind, Strategy) :-
                         (Dim =< Dimensions ->
                                 (is_special_type(Type_var, Is_special_type),
                                  midoan_type:midoan_type__get_attribute(Type_var, first(Dim), Min),
                                  midoan_type:midoan_type__get_attribute(Type_var, last(Dim), Max),
                                  midoan_solver:midoan_solver__get_type_from_value(Min, Type_index),
-                                 print_solution(Type_index, Min, Is_special_type, Current_TP_stream),
+                                 print_solution(Type_index, Min, Is_special_type, Current_TP_stream, Kind, Strategy),
                                  format(Current_TP_stream, "..", []),
                                  format('answer_output', "..", []),
-                                 print_solution(Type_index, Max, Is_special_type, Current_TP_stream),
+                                 print_solution(Type_index, Max, Is_special_type, Current_TP_stream, Kind, Strategy),
                                  (Dim == Dimensions ->
                                         true
                                  ;
                                         (Dim_1 is Dim + 1,
                                          format(Current_TP_stream, ", ", []),
                                          format('answer_output', ", ", []),
-                                         pspir_print_indexes_range(Type_var, Dim_1, Current_TP_stream)
+                                         pspir_print_indexes_range(Type_var, Dim_1, Current_TP_stream, Kind, Strategy)
                                         )
                                  )
                                 )
@@ -478,14 +500,14 @@ print_solution(_, _, _Is_special_type, Current_TP_stream) :-
                         ).
 %%%
         %even works for multidimentional single element array
-        print_single_array_aggregate([F|Rest], Element, Is_special_type, Current_TP_stream) :-
+        print_single_array_aggregate([F|Rest], Element, Is_special_type, Current_TP_stream, Kind, Strategy) :-
                 psaa_print_choice(F, Current_TP_stream),
                 (Rest == [] ->
                         (midoan_solver:midoan_solver__get_type_from_value(Element, Type),
-                         print_solution(Type, Element, Is_special_type, Current_TP_stream)
+                         print_solution(Type, Element, Is_special_type, Current_TP_stream, Kind, Strategy)
                         )
                 ;
-                        print_single_array_aggregate(Rest, Element, Is_special_type, Current_TP_stream)
+                        print_single_array_aggregate(Rest, Element, Is_special_type, Current_TP_stream, Kind, Strategy)
                 ),
                 print_scope(1, [0')], Current_TP_stream).
 %%%
@@ -510,34 +532,34 @@ print_solution(_, _, _Is_special_type, Current_TP_stream) :-
         %print_array_solution([([1,1,1], 1.11), ([1,1,2], 1.12), ([1,2,1], 1.21), ([1,2,2], 1.22), ([1,3,1], 1.31), ([1,3,2], 1.32), ([2,1,1], 2.11), ([2,1,2], 2.12), ([2,2,1], 2.21), ([2,2,2], 2.22), ([2,3,1], 2.31), ([2,3,2], 2.32)]).
         %quite difficult to achieve ... but below works fine
         %  another solution would be to write a recursive parser in Prolog for this with action rules 'a la' yacc ...
-        ps_print_array_solution([(First_inds, Element)], Is_special_type, Current_TP_stream) :-
+        ps_print_array_solution([(First_inds, Element)], Is_special_type, Current_TP_stream, Kind, Strategy) :-
                 !,      %needed
                 %a single element array : cannot use a single positional array aggregate (illegal in Ada) as the test driver will not compile
                 %cannot even write (others => ...)
-                print_single_array_aggregate(First_inds, Element, Is_special_type, Current_TP_stream).
-        ps_print_array_solution([(First_inds, Element), (Next_inds, Next_element)|Rest], Is_special_type, Current_TP_stream) :-        %to help indexing we ensure at least two elements
+                print_single_array_aggregate(First_inds, Element, Is_special_type, Current_TP_stream, Kind, Strategy).
+        ps_print_array_solution([(First_inds, Element), (Next_inds, Next_element)|Rest], Is_special_type, Current_TP_stream, Kind, Strategy) :-        %to help indexing we ensure at least two elements
                 length(First_inds, Scope),
                 print_scope(Scope, [0'(], Current_TP_stream),	%Prints first element of aggregate : opening brackets outputed
                 midoan_solver:midoan_solver__get_type_from_value(Element, Type),
-                print_solution(Type, Element, Is_special_type, Current_TP_stream),	%prints the actual element of the aggregate
+                print_solution(Type, Element, Is_special_type, Current_TP_stream, Kind, Strategy),	%prints the actual element of the aggregate
                 %29/03/07 normally we used to pass the type of the first element around since all the elements of an array are of the same type
                 % but for outputs some elements of the array may actually be unitialised
                 %so we check all elements ...
-                pspas_print_array_solution2([(Next_inds, Next_element)|Rest], First_inds, Is_special_type, Current_TP_stream).
+                pspas_print_array_solution2([(Next_inds, Next_element)|Rest], First_inds, Is_special_type, Current_TP_stream, Kind, Strategy).
 %%%
-                pspas_print_array_solution2([(Inds, Element)], _First_inds, Is_special_type, Current_TP_stream) :- %Prints last element of aggregate
+                pspas_print_array_solution2([(Inds, Element)], _First_inds, Is_special_type, Current_TP_stream, Kind, Strategy) :- %Prints last element of aggregate
                         !,      %needed
                         format(Current_TP_stream, ",", []),
                         format('answer_output', ",", []),
                         midoan_solver:midoan_solver__get_type_from_value(Element, Type),
-                        print_solution(Type, Element, Is_special_type, Current_TP_stream),	%prints the actual element of the aggregate
+                        print_solution(Type, Element, Is_special_type, Current_TP_stream, Kind, Strategy),	%prints the actual element of the aggregate
                         length(Inds, Scope),
                         print_scope(Scope, [0')], Current_TP_stream).
-                pspas_print_array_solution2([(Inds, Element)|Rest], Previous_inds, Is_special_type, Current_TP_stream) :-
-                        pspaspas_print_array_solution3((Inds, Element), Previous_inds, 0, Is_special_type, Current_TP_stream),
-                        pspas_print_array_solution2(Rest, Inds, Is_special_type, Current_TP_stream).
+                pspas_print_array_solution2([(Inds, Element)|Rest], Previous_inds, Is_special_type, Current_TP_stream, Kind, Strategy) :-
+                        pspaspas_print_array_solution3((Inds, Element), Previous_inds, 0, Is_special_type, Current_TP_stream, Kind, Strategy),
+                        pspas_print_array_solution2(Rest, Inds, Is_special_type, Current_TP_stream, Kind, Strategy).
 %%%
-                        pspaspas_print_array_solution3(([_Last], Element), _Previous_inds, Scope, Is_special_type, Current_TP_stream) :-
+                        pspaspas_print_array_solution3(([_Last], Element), _Previous_inds, Scope, Is_special_type, Current_TP_stream, Kind, Strategy) :-
                                 !,      %needed
                                 print_scope(Scope, [0')], Current_TP_stream),	%prints 'Scope' closing brackets
                                 format('answer_output', ",", []),
@@ -545,13 +567,13 @@ print_solution(_, _, _Is_special_type, Current_TP_stream) :-
                                 format(Current_TP_stream, ",", []),
                                 print_scope(Scope, [0'(], Current_TP_stream),	%prints 'Scope' opening brackets
                                 midoan_solver:midoan_solver__get_type_from_value(Element, Type),
-                                print_solution(Type, Element, Is_special_type, Current_TP_stream).	%prints the actual element of the aggregate
-                        pspaspas_print_array_solution3(([First, Second|Rest_inds], Element), [Previous_first|Rest_previous], Scope, Is_special_type, Current_TP_stream) :-   %to help indexing we ensure at least two elements
+                                print_solution(Type, Element, Is_special_type, Current_TP_stream, Kind, Strategy).	%prints the actual element of the aggregate
+                        pspaspas_print_array_solution3(([First, Second|Rest_inds], Element), [Previous_first|Rest_previous], Scope, Is_special_type, Current_TP_stream, Kind, Strategy) :-   %to help indexing we ensure at least two elements
                                 (First == Previous_first ->
-                                        pspaspas_print_array_solution3(([Second|Rest_inds], Element), Rest_previous, Scope, Is_special_type, Current_TP_stream)
+                                        pspaspas_print_array_solution3(([Second|Rest_inds], Element), Rest_previous, Scope, Is_special_type, Current_TP_stream, Kind, Strategy)
                                 ;
                                         (Scope_out is Scope + 1,
-                                         pspaspas_print_array_solution3(([Second|Rest_inds], Element), Rest_previous, Scope_out, Is_special_type, Current_TP_stream)
+                                         pspaspas_print_array_solution3(([Second|Rest_inds], Element), Rest_previous, Scope_out, Is_special_type, Current_TP_stream, Kind, Strategy)
                                         )
                                 ).
 %%%
@@ -602,7 +624,8 @@ print_solution_noninit_or_floats(Value, Driver_name, Is_special_type, Current_TP
                          !,
                          midoan_solver:midoan_solver__get_type_from_value(Element_var, Type_element_var),
                          format(Current_TP_stream, " => ", []),
-                         print_solution(Type_element_var, Element_var, Is_special_type_component, Current_TP_stream),      %should only print to Current_TP_stream but does not
+                         mika_globals:mika_globals__get_NBT('strategy', Strategy),
+                         print_solution(Type_element_var, Element_var, Is_special_type_component, Current_TP_stream, 'constraint', Strategy),      %should only print to Current_TP_stream but does not
                          format(Current_TP_stream, ")), ""~w.~w"", "" a non empty array"", ""empty array"");\n", [Current_TP_stream, Driver_name])
                         )
                  ;

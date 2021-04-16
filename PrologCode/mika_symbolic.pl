@@ -190,7 +190,7 @@ post_elaboration(Target_package_name, Target_subprogram_name, Sub_var, All_conte
                          setup_and_run(Target_subprogram_name, Sub_var, All_contents, SEAV_list, Unhandled_list, ParamL_driver, return(Return_c), Flow),        %where it all happens prior to reporting : may fail if we unsuccessfully backtrack : that is normal
                          %%%%%%
                          (common_util:common_util__is_an_exception(Flow) ->
-                                true			%it is worth reporting the path followed
+                                true			%an exception (could be genuine, a rune or a query exception([id(fakeException(_SecretMikaCallId)), _Symb])): it is worth reporting the path followed
                          ;
                                 (mika_coverage:mika_coverage__current_path_contain_uncovered(Strategy, Current_path_contain_uncovered, Newly_covered),
                                  %added 09-02-07, check if the path executed actually contains something new
@@ -219,11 +219,12 @@ post_elaboration(Target_package_name, Target_subprogram_name, Sub_var, All_conte
         (Driver_achieves_full_coverage == 'no' ->
                 (%an interesting path has been followed, worth labeling attempt and reporting
                  label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Target_subprogram_name, Sub_var, ParamL_driver, return(Return_c), Newly_covered, Flow),		%report generation, test cases are generated etc. [may fail because of labeling]
+                 %trace,
                  %checking coverage criterion
-                 ((common_util:common_util__is_an_exception(Flow), Strategy \== 'rune_coverage') -> %an unexpected uncaught exception has reached the top level
+                 ((common_util:common_util__is_an_exception(Flow), Strategy \== 'rune_coverage', Strategy \== 'query') -> %an unexpected uncaught exception has reached the top level
                         (Flow =.. ['exception'|Exception_arguments],
                          format('answer_output', "----------------------------------------------------------\n", []),
-                         format('answer_output', "Uncaught exception detected : ~w\n", [Exception_arguments]),
+                         format('answer_output', "Unexpected exception detected : ~w\n", [Exception_arguments]),
                          Coverage_achieved = -1,
                          !
                         )
@@ -276,6 +277,9 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                  Strategy == 'rune_coverage' ->
                         format(answer_output, "~w RUNTIME ERRORS PREDICTED GENERATED:\n", [Nac])
                 ;
+                 Strategy == 'query' ->
+                        format(answer_output, "~w QUERY TESTS GENERATED:\n", [Nac])        
+                ;
                  (Strategy == 'decision' ; Strategy == 'mcdc') ->
                         format(answer_output, "~w DECISIONS PREDICTED COVERED:\n", [Nac])
                 ;
@@ -288,6 +292,9 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                 ;
                  Strategy == 'rune_coverage' ->
                         format(answer_output, "~w RUNTIME ERRORS PREDICTED REMAINING TO BE COVERED:\n", [Nnc])
+                ;
+                 Strategy == 'query' ->
+                        format(answer_output, "~w QUERIES PREDICTED REMAINING TO BE COVERED:\n", [Nnc])                        
                 ;
                  (Strategy == 'decision' ; Strategy == 'mcdc') ->
                         format(answer_output, "~w DECISIONS PREDICTED REMAINING TO BE COVERED:\n", [Nnc])
@@ -309,6 +316,11 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                                  user:rune(RuneId, Name, Filename, Suffix, Path, Line, Column),
                                  format(answer_output, "Number ~w, in file ~w~w, on line ~w and column ~w\n", [RuneId, Filename, Suffix, Line, Column])
                                 )
+                        ;
+                         Strategy == 'query' ->
+                                (Next = SecretMikaCallId,
+                                 format(answer_output, "Number ~w\n", [SecretMikaCallId])
+                                )        
                         ;
                          Strategy == 'decision' ->
                                 (Next = (Number, Truth_value),
@@ -336,9 +348,14 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                         ;
                          Strategy == 'rune_coverage' ->
                                 (Next = RuneId,
-                                user:rune(RuneId, Name, Filename, Suffix, Path, Line, Column),
-                                format(answer_output, "Number ~w, in file ~w~w, on line ~w and column ~w\n", [RuneId, Filename, Suffix, Line, Column])
+                                 user:rune(RuneId, Name, Filename, Suffix, Path, Line, Column),
+                                 format(answer_output, "Number ~w, in file ~w~w, on line ~w and column ~w\n", [RuneId, Filename, Suffix, Line, Column])
                                 )
+                        ;
+                         Strategy == 'query' ->
+                                (Next = SecretMikaCallId,
+                                 format(answer_output, "Number ~w\n", [SecretMikaCallId])
+                                )            
                         ;
                          Strategy == 'decision' ->
                                 (Next = (Number, Truth_value),
@@ -364,7 +381,7 @@ post_elaboration(_Target_package_name, _Target_subprogram_name, _Sub_var, _All_c
                                  )
                                 )
                         ;
-                                common_util:common_util__error(10, "Testing strategy is unknown", no_error_consequences, [(strategy, Strategy)], 1025944, mika_symbolic, print_individuals_overall_coverage_details, no_localisation, "Strategy can only be one of branch|decision|condition|mcdc")
+                                common_util:common_util__error(10, "Testing strategy is unknown", no_error_consequences, [(strategy, Strategy)], 1025944, mika_symbolic, print_individuals_overall_not_covered_details, no_localisation, "Strategy can only be one of branch|decision|condition|mcdc")
                         ),
                         print_individuals_overall_not_covered_details(Rest, Strategy).
 %%%
@@ -383,8 +400,17 @@ print_covered_in_path(Strategy, Flow) :-
                 format('answer_output', "GATES OR ATOMIC DECISIONS:\n", [])
         ;
          Strategy == 'rune_coverage' ->
-                (common_util:common_util__get_exception_id(Flow, RuneId),
-                 format('answer_output', "RUNTIME EXCEPTION RAISED, NUMBER: ~w\n", [RuneId]),
+                ((common_util:common_util__get_exception_id(Flow, RuneId) ->
+                        format('answer_output', "RUNTIME EXCEPTION RAISED, NUMBER: ~w\n", [RuneId])
+                 ;
+                        format('answer_output', "NO RUNTIME EXCEPTION RAISED\n", [])
+                 ),
+                 format('answer_output', "Following these branches :\n", [])
+                )
+        ;
+         Strategy == 'query' ->
+                (common_util:common_util__get_exception_id(Flow, fakeException(SecretMikaCallId)),
+                 format('answer_output', "QUERY ANSWERED, NUMBER: ~w\n", [SecretMikaCallId]),
                  format('answer_output', "Following these branches :\n", [])    %just to provide additional details
                 )
         ;
@@ -406,7 +432,7 @@ print_covered_in_path(Strategy, Flow) :-
                 !,      %added 06/02/2021
                 print_individuals_coverage_details(Rest, Strategy).
         print_individuals_coverage_details([Next|Rest], Strategy) :-
-                ((Strategy == 'branch' ; Strategy == 'rune_coverage') ->
+                ((Strategy == 'branch' ; Strategy == 'rune_coverage' ; Strategy == 'query') ->
                         (Next = (Number, Truth_value),
                          user:bran(Number, _Name, Filename, Suffix, _Path, Line, Column),
                          format('answer_output', "Number ~w, outcome ~w, in file ~w~w, on line ~w and column ~w\n", [Number, Truth_value, Filename, Suffix, Line, Column])
@@ -457,6 +483,7 @@ print_covered_in_path(Strategy, Flow) :-
 %subprogram call needs to be specific to setup_and_run because the arguments need to be declared here and now unlike subsequent internal subprogram calls
 setup_and_run(Target_subprogram_name, Sub_var, All_contents, SEAV_list, Unhandled_list, ParamL_driver, return(Return_c), Flow) :-
         !,
+        %trace,
         common_util__error(1, "MIKA : Processing subprogram", no_error_consequences, [(target_subprogram_name, Target_subprogram_name)], 1344122, mika_symbolic, setup_and_run, no_localisation, no_extra_info),
         mika_sub_atts:mika_sub_atts__get('params', Sub_var, Params),
         check_for_unhandled(Params, Has_unhandled),
@@ -537,7 +564,26 @@ label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Targe
                                  for_all_TP_begin(All_TPs),
                                  common_util__error(1, "MIKA : END Generating Values", no_error_consequences, no_arguments, 1406115, mika_symbolic, label_and_report, no_localisation, no_extra_info),
 				 common_util__error(1, "MIKA : START Print Solution Input Variables", no_error_consequences, no_arguments, 1407138, mika_symbolic, label_and_report, no_localisation, no_extra_info),
-				 mika_print:mika_print__solutions(Inputs, input_value, Target_subprogram_name, ParamL_driver),	%also prints input solutions to the test point files
+				 %trace,
+                                 (Strategy == 'query' ->
+                                         (mika_globals:mika_globals__get_NBT(query_state, query_state(_To_cover, Covered, _Mika_unreachable)),
+                                          (Covered == [] ->
+                                                true
+                                          ;
+                                                format('query_output', ",\n", [])
+                                          ),
+                                          common_util:common_util__get_exception_id(Flow, fakeException(SecretMikaCallId)),
+                                          format('query_output', "\"~w\":{\n", [SecretMikaCallId])
+                                         )
+                                 ;
+                                         true
+                                 ),
+                                 mika_print:mika_print__solutions(Inputs, input_value, Target_subprogram_name, ParamL_driver),	%also prints input solutions to the test point files
+                                 (Strategy == 'query' ->
+                                        format('query_output', "\n     }", [])
+                                 ;
+                                        true
+                                 ),
                                  mika_print:mika_print__solutions(Contexts, input_value, Target_subprogram_name, []),  %should only print to test point, but does not
                                  common_util__error(1, "MIKA : END Print Solution Input Variables", no_error_consequences, no_arguments, 1410136, mika_symbolic, label_and_report, no_localisation, no_extra_info),
 				 tp_print_call(Main_TP, Return_c, ParamL_driver, Target_subprogram_name),              %prints the subprogram under call in the main test point
@@ -572,12 +618,18 @@ label_and_report(Strategy, SEAV_list, Unhandled_list, Target_package_name, Targe
                 (common_util:common_util__get_exception_id(Flow, RuneId),
                  mika_coverage:update_runes_state(add_to_covered, RuneId) 
                 )
+        ;
+         Strategy == 'query' ->
+                 mika_coverage:update_query_state(add_to_covered, SecretMikaCallId)
+        ;
+                 true
         ),
 	!.
 
 %only SEAV_list is an input, the rest are outputs necessary for labeling
 %only for the foo.mika file
 prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Outputs, Contexts, Nb1, Newly_covered, Flow) :-
+        %trace,
         mika_globals:mika_globals__get_NBT('debug_mode', DebugMode),
         common_util__error(1, "MIKA : Report Generation", no_error_consequences, no_arguments, 144494, mika_symbolic, prepare_mika_report, no_localisation, no_extra_info),
         pmr_partition_seavs(SEAV_list, Unused, Inputs, Outputs, Contexts),
@@ -619,7 +671,7 @@ prepare_mika_report(Strategy, SEAV_list, Unhandled_list, IL, RL, EL, Inputs, Out
         ).
 %%%
         print_newly_covered(Newly_covered, Strategy) :-
-                (Strategy == 'rune_coverage' ->
+                ((Strategy == 'rune_coverage' ; Strategy == 'query') ->
                         true    %exception covered already reported (there can only be one)
                 ;
                         ((Strategy == 'branch' ->

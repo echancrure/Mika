@@ -39,10 +39,10 @@ initialise_globals(Install_dir, Strategy, Debug_mode) :-
         mika_globals:mika_globals__set_NBT('path_nb', 0),
         mika_globals:mika_globals__set_NBT('test_driver_test_nb', 0),
 	mika_globals:mika_globals__set_NBT('abandoned_path_nb', 0),	        %counts the number of timed out and unsuccessful labeling tests
-        mika_globals:mika_globals__set_NBT('strategy', Strategy),              %one of branch|decision|condition|mcdc|rune_coverage
-        mika_globals:mika_globals__set_NBT('install_dir', Install_dir),        %the install dir of the generator executable
-        mika_globals:mika_globals__set_NBT('debug_mode', Debug_mode),          %debug or release
-        mika_globals:mika_globals__set_NBT('message_mode', Debug_mode),        %debug or release
+        mika_globals:mika_globals__set_NBT('strategy', Strategy),               %one of branch|decision|condition|mcdc|rune_coverage|query
+        mika_globals:mika_globals__set_NBT('install_dir', Install_dir),         %the install dir of the generator executable
+        mika_globals:mika_globals__set_NBT('debug_mode', Debug_mode),           %debug or release
+        mika_globals:mika_globals__set_NBT('message_mode', Debug_mode),         %debug or release
         mika_globals:mika_globals__set_NBT('coverage_thoroughness', 'subprogram_only'),      %default is subprogram only
         mika_globals:mika_globals__set_NBT('driver', 'no_driver'),      %used to indicate that we are in a driver mode and also to retrive the target subprogram xrefed name
         mika_globals:mika_globals__set_NBT('test_points', []),          %the list of Test Points
@@ -163,9 +163,28 @@ go(Install_dir, Parsed_dir, Target_source_file_name, Target_raw_subprogram_name,
                 true
         ),
         print_preamble('answer_output', datime(Year, Month, Day, Hour, Min, Sec), Orig_dir, Target_package_name, Target_subprogram_name, Strategy, Elaboration, New_dir, Driver),
-
+        (Strategy == 'query' ->
+                ((stream_property(_, alias('query_output')) ->	%to detect if the stream is already open (useful during debugging)
+                        close('query_output')
+                 ;
+                        true
+                 ),
+                 atom_concat(Target_package_name, '.json', Query_output_file),
+                 open(Query_output_file, 'write', _, [alias('query_output')]),
+                 format('query_output', "{\n", [])
+                )
+        ;
+                true
+        ),
         %where it all happens
 	mika_symbolic:mika_symbolic__analyse(Input_file, Target_source_file_name, Target_package_name, Target_subprogram_name, Line_no, Driver, Strategy, Actual_coverage),
+        (Strategy == 'query' ->
+                (format('query_output', "\n}", []),
+                 close('query_output')
+                )
+        ;
+                true
+        ),
         (stream_property(_, alias('dummy_mika_test_point')) ->	%to detect if our dummy_mika_test_point stream was created
 		close('dummy_mika_test_point')
    	;

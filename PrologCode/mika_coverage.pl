@@ -19,7 +19,8 @@
 %covered_bran			: non backtrackable	: list of branches covered by previous tests (list of (Id, true|false))
 %covered_deci			: non backtrackable	: list of decisions covered by previous tests (list of (Id, true|false))
 %covered_cond			: non backtrackable	: list of conditions covered by previous tests (list of (Id, true|false))
-%runes_state                    : non backtrackable	: runes_state(Remain, Covered, Mika_unreachable), the state of the runes, list of Ids, 
+%runes_state                    : non backtrackable	: runes_state(Remain, Covered, Mika_unreachable), the state of the runes, list of Ids
+%query_state                    : non backtrackable	: query_state(Remain, Covered, Mika_unreachable), the state of the secretMikaCalls, list of Ids
 %to_cover                       : non backtrackable	: list of branches or decisions that need to be covered according to, the user defined, level of coverage thoroughness desired
 %current_path_bran		: backtrackable		: chronological list of branches in the current path (list of (Id, true|false))
 %current_path_deci		: backtrackable		: chronological list of decisions in the current path (list of (Id, true|false))
@@ -57,8 +58,10 @@
 %arc(Start, End, true|false), Start and End are labels
 :- dynamic arc_bran/3.          %cfg of branches
 :- dynamic arc_deci/3.          %cfg of decisions
-%arc(BranStart, true|false, Rune) "to reach run"
+%arc_rune(BranId, true|false, RuneIdL) list of RunesIds reachable from BranId, Truth
 :- dynamic arc_rune/3.          %mixed bran/rune for runes
+%arc_query(BranId, true|false, SecretMikaCallIdL) list of SecretMikaCallIds reachable from BranId, Truth
+:- dynamic arc_query/3.         %mixed bran/query for queries
 %call(Start, Subprogram_name, true|false)
 :- dynamic call_bran/3.         %subprogram call from a branch
 :- dynamic call_deci/3.         %subprogram call from a decision
@@ -69,6 +72,7 @@
 %successor((Id, Truth), [(Id, Truth)*])
 :- dynamic successor/2.                 %successor list for branches or decisions with format successor((Id, Truth), [(Id, Truth)]). First Id can be start(fullSubprogramName)
 :- dynamic rune_successor/2.            %successor list for runes with the format successor((BranId, BranTruth), [RuneId])
+:- dynamic query_successor/2.           %successor list for queries with the format query_successor((BranId, BranTruth), [SecretMikaCallId])  
 %%%
 :- dynamic tmp_call/1.                  %temporary assert used in add_all_calls/3
 
@@ -82,10 +86,12 @@
 mika_coverage__build_cfg(All_contents, Strategy) :-
         mika_globals:mika_globals__set_NBT('overall_mcdc_deci', []),
         mika_globals:mika_globals__set_NBT('runes_state', runes_state([], [], [])),
+        mika_globals:mika_globals__set_NBT('query_state', query_state([], [], [])),
 	%%%start cfg initialisations
 	retractall(arc_bran(_, _, _)),
         retractall(arc_deci(_, _, _)),
         retractall(arc_rune(_, _, _)),
+        retractall(arc_query(_, _, _)),
         retractall(call_bran(_, _, _)),
 	retractall(call_deci(_, _, _)),
         retractall(successor(_, _, _)),
@@ -113,7 +119,7 @@ mika_coverage__build_cfg(All_contents, Strategy) :-
 	),
         %trace,
         calculate_successors(Strategy, 'elaboration'),   %we do this even for subprogram testing because if the elaboration (which needs to be performed) contains branches etc, they need to be followed and successors may need to be checked
-	check_well_formedness,	%debugging check in mika_coverage_check.pl
+	check_well_formedness,	        %debugging check in mika_coverage_check.pl
         !.
 %%%
 %recording the current subpaths considered
@@ -437,7 +443,7 @@ mika_coverage__finished(Strategy) :-
                 )
         ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Kind is 'branch', 'decision', 'rune_coverage', 'mcdc' or 'condition'
+%Kind is 'branch', 'decision', 'rune_coverage', 'query' 'mcdc' or 'condition'
 %called when full coverage cannot be achieved only calculates the percentage coverage achieved
 mika_coverage__not_finished(Kind, Remaining_to_be_covered, Percentage_achieved, Already_covered) :-
         %trace,
@@ -454,8 +460,13 @@ mika_coverage__not_finished(Kind, Remaining_to_be_covered, Percentage_achieved, 
 %for mcdc To_cover and Already_covered is a list of Ids and To_be_covered is a list of (Id_deci, Gate_list, Truth_list)
 %for rune just a list of RuneIds
 get_remaining_to_be_covered(Strategy, To_cover, Already_covered, To_be_covered) :-
-        (Strategy == rune_coverage ->
+        (Strategy == 'rune_coverage' ->
                 (mika_globals:mika_globals__get_NBT(runes_state, runes_state(To_cover, Already_covered, _Mika_unreachable)),
+                 mika_list:mika_list__subtract(To_cover, Already_covered, To_be_covered)
+                )
+        ;
+         Strategy == 'query' ->
+                (mika_globals:mika_globals__get_NBT(query_state, query_state(To_cover, Already_covered, _Mika_unreachable)),
                  mika_list:mika_list__subtract(To_cover, Already_covered, To_be_covered)
                 )
         ;
@@ -567,6 +578,23 @@ create_rune_arc(RuneId) :-
         ;
                 assert(arc_rune(N_bran, Tv_bran, [RuneId]))
         ).
+
+%template from above, should be refactored once verified
+create_query_arc(SecretMikaCallId) :-
+        mika_globals:mika_globals__get_BT(current_node_bran, N_bran),
+	mika_globals:mika_globals__get_BT(current_arc_bran, Tv_bran),	%true or false
+        (arc_query(N_bran, Tv_bran, SecretMikaCallIdL) ->		%from N to SecretMikaCallIdL while Tv holds, already exists
+                (memberchk(SecretMikaCallId, SecretMikaCallIdL) ->
+                        true
+                 ;
+                        (retract(arc_query(N_bran, Tv_bran, SecretMikaCallIdL)),
+                         assert(arc_query(N_bran, Tv_bran, [SecretMikaCallId|SecretMikaCallIdL]))
+                        )
+                )
+        ;
+                assert(arc_query(N_bran, Tv_bran, [SecretMikaCallId]))
+        ).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %only called during cfg construction
 add_decision_to_overall_mcdc_deci(Id_deci) :-
@@ -627,7 +655,7 @@ gates_covered(Gate_list, Truth_list) :-
                 true
         ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%calculate the list of successors for the subprogram under test and set 'to_cover' and, if necessary 'overall_mcdc_deci'
+%After elaboration has taken place: calculate the list of successors for the subprogram under test and set 'to_cover' and, if necessary 'overall_mcdc_deci'
 mika_coverage__post_elaboration(Strategy, Subprogram_name_xref) :-
         %trace,
         (Subprogram_name_xref == 'elaboration' ->
@@ -636,18 +664,24 @@ mika_coverage__post_elaboration(Strategy, Subprogram_name_xref) :-
                 calculate_successors(Strategy, Subprogram_name_xref)    %calculate the necessary successor information
         ),
         (Strategy == 'rune_coverage' ->
-                (rune_successor((start(Subprogram_name_xref), true), RuneL), %list of runeId
+                (rune_successor((start(Subprogram_name_xref), true), RuneIdL), %list of runeIds
                  !,
-                 update_runes_state('set_to_cover', RuneL)
+                 update_runes_state('set_to_cover', RuneIdL)
+                )
+        ;
+         Strategy == 'query' ->
+                (query_successor((start(Subprogram_name_xref), true), SecretMikaCallIdL),       %list of SecretMikaCallIds
+                 !,
+                 update_query_state('set_to_cover', SecretMikaCallIdL)
                 )
         ;
                 true        
         ),
         check_successors(start(Subprogram_name_xref), true, To_cover),	        %list of (Id, true|false) that we need to cover according to depth of coverage desired by user
-        mika_globals:mika_globals__set_NBT('to_cover', To_cover),
+        mika_globals:mika_globals__set_NBT('to_cover', To_cover),       %why is this branch coverage set globally for all kinds of coverage desired?
         (Strategy == 'mcdc' ->
                 update_overall_mcdc_deci_according_to_to_cover(To_cover)
-        ;
+        ; 
                 true
         ).
 %%%
@@ -773,4 +807,78 @@ branch_lead_to_new_rune(BranchId, Branch_truth) :-
         mika_globals:mika_globals__get_BT_path(current_path_false_rune, False_runeIdL),
         mika_list:mika_list__subtract(New_runeL, False_runeIdL, New_reachableL),
         New_reachableL \= [].       %there are remaining runes ahead from this branch
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%updates query_state(To_cover, Covered, Mika_unreachable)
+%cut and pasted from runes above: refactoring needed
+update_query_state(Task, Arg) :-
+        %trace,
+        mika_globals:mika_globals__get_NBT(query_state, query_state(To_cover, Covered, Mika_unreachable)),
+        (Task == 'set_to_cover' ->
+                mika_globals:mika_globals__set_NBT(query_state, query_state(Arg, Covered, Mika_unreachable))
+        ;
+         Task == 'add_to_covered' ->
+                (lists:memberchk(Arg, Covered) ->
+                        true    %already present : nothing to do
+                ;
+                        mika_globals:mika_globals__set_NBT(query_state, query_state(To_cover, [Arg|Covered], Mika_unreachable))  
+                )
+        ;
+                common_util:common_util__error(10, "Task is unknown", no_error_consequences, [(task, Task)], 10070221, mika_coverage, update_query_state, no_localisation, "Task can only be one of add_to_overall|add_to_covered")
+        ).
+%%%
+check_query_state(remain_to_be_covered, RuneId) :-
+        mika_globals:mika_globals__get_NBT(query_state, query_state(_To_cover, Covered, _Mika_unreachable)),
+        \+ memberchk(RuneId, Covered).  %not a member
+%%%
+add_false_query_to_current_path(QueryId) :-
+        mika_globals:mika_globals__add_BT_path(current_path_false_query, QueryId).
+%%%
+%template from branch_lead_to_new_rune(BranchId, Branch_truth) 
+%needs merging and refactoring
+branch_lead_to_new_query(BranchId, Branch_truth) :-
+        %trace,
+        mika_globals:mika_globals__get_NBT(query_state, query_state(_To_cover, Covered, _Mika_unreachable)),
+        query_successor((BranchId, Branch_truth), Successor_queryL),
+        !,
+        mika_list:mika_list__subtract(Successor_queryL, Covered, New_queryL),
+        mika_globals:mika_globals__get_BT_path(current_path_false_query, False_queryIdL),
+        mika_list:mika_list__subtract(New_queryL, False_queryIdL, New_reachableL),
+        New_reachableL \= [].       %there are remaining queries ahead from this branch
+%%%
+path_lead_to_new_query :-
+        mika_coverage:mika_coverage__get_latest_traversed(branch, (BranchId, Branch_truth)),
+        (branch_lead_to_new_query(BranchId, Branch_truth) ->
+                true
+        ;        
+                (check_successors(BranchId, Branch_truth, ReachableBranL),
+                 (has_successors_with_uncovered_query(ReachableBranL) ->
+                        true
+                 ;
+                        (util_get_stack('branch', Current_stack),   %To be sure, also need to look at the successors of the subprogram calls so far
+                         mc__pltnq_check_all_previous_calls(Current_stack)
+                        )
+                 )
+                )
+        ),
+        !.
+%%%
+        mc__pltnq_check_all_previous_calls([]) :-
+                fail.
+        mc__pltnq_check_all_previous_calls([from(Id, Truth)|Previous]) :-
+                check_successors(Id, Truth, To_be_covered),
+                ord_del_element(To_be_covered, (Id, Truth), To_be_covered_clean),
+                (has_successors_with_uncovered_query(To_be_covered_clean) ->
+                        true
+                ;
+                        mc__pltnq_check_all_previous_calls(Previous)
+                ).
+%%%
+        has_successors_with_uncovered_query([]) :-
+                fail.
+        has_successors_with_uncovered_query([(BranchId, Branch_truth)|Rest]) :-
+                (branch_lead_to_new_query(BranchId, Branch_truth) ->
+                        true
+                ;
+                        has_successors_with_uncovered_query(Rest)
+                ).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

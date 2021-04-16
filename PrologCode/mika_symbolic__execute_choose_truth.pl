@@ -34,7 +34,7 @@ choose_truth(Expression, Outcome) :-
         ),*/
         %trace,
         generate_combinations(Expression, CombinationsL),               %generate a list of combinations in CombinationsL
-        mika_globals:mika_globals__get_NBT('strategy', Kind),                          %global branch, decision, rune_coverage or condition coverage desired
+        mika_globals:mika_globals__get_NBT('strategy', Kind),                          %global branch, decision, rune_coverage, query or condition coverage desired
         (CombinationsL = bitwise_deci(Id_deci, _Id_conds, arg(_Symb, _Cons)) ->
                 (Outcome = CombinationsL,                               %because already performed
                  mika_coverage:mika_coverage__remove_bitwise_decision(Kind, Id_deci) %need to update the traversal information : Id_deci has been fully covered (or needs to be removed from list of decisions but may impact cfg too)
@@ -105,7 +105,7 @@ choose_combination([First|Rest], Kind, Chosen_combination, Outcome) :-          
                  )
                 )
         ;
-         (Kind == 'branch' ; Kind == 'rune_coverage') ->
+         (Kind == 'branch' ; Kind == 'rune_coverage' ; Kind =='query') ->
                 (First = bran(Id, _Deci, Outcome_first) ->
                         choose_combination_main(First, Rest, Id, Outcome_first, Kind, Chosen_combination, Outcome)
                 ;
@@ -119,8 +119,14 @@ choose_combination([First|Rest], Kind, Chosen_combination, Outcome) :-          
                                  (Current_path_contain_uncovered == 'yes' ->
                                         random_branch(0.1, First, Rest, Outcome_first, Kind, Chosen_combination, Outcome)
                                  ;
-                                        (%we obtain the latest arc followed for the current path
-                                         (mika_coverage:mika_coverage__get_latest_traversed(Kind, (Id, Truth)) ->
+                                        ((Kind == 'query' ->
+                                                (mika_coverage:path_lead_to_new_query ->
+                                                        Path_may_lead_to_uncovered_not_in_current_path = 'yes'
+                                                ;
+                                                        Path_may_lead_to_uncovered_not_in_current_path = 'no'
+                                                )
+                                         ;
+                                          mika_coverage:mika_coverage__get_latest_traversed(Kind, (Id, Truth)) ->
                                                 mika_coverage:mika_coverage__path_may_lead_to_uncovered_not_in_current_path(Kind, (Id, Truth), Path_may_lead_to_uncovered_not_in_current_path)
                                          ;
                                                 %failed because nothing traversed so far
@@ -128,7 +134,7 @@ choose_combination([First|Rest], Kind, Chosen_combination, Outcome) :-          
                                          ),
                                          (Path_may_lead_to_uncovered_not_in_current_path == 'no' ->
                                                 (mika_globals:mika_globals__get_NBT('to_cover', To_cover),
-                                                 (To_cover == [] ->     %12/11/10 to ensure that at least one test is generated even if, for example, there is no branches but banch coverage is required
+                                                 (To_cover == [] ->     %12/11/10 to ensure that at least one test is generated even if, for example, there is no branches but branch coverage is required
                                                         random_branch(0.1, First, Rest, Outcome_first, Kind, Chosen_combination, Outcome)
                                                  ;
                                                         fail    %see top 06/10/06
@@ -258,6 +264,19 @@ choose_combination_main(First, Rest, Id, Outcome_first, Kind, Chosen_combination
                  Kind == 'rune_coverage' ->
                         (mika_coverage:branch_lead_to_new_rune(Id, Outcome_first) -> 
                                 ((%(Id, Outcome_first) leads to an exception that remains to be covered
+                                        (Chosen_combination = First,
+                                         Outcome = Outcome_first
+                                        )
+                                ;
+                                        choose_combination(Rest, Kind, Chosen_combination, Outcome) 
+                                ))
+                        ;
+                                choose_combination(Rest, Kind, Chosen_combination, Outcome)
+                        )
+                ;
+                Kind == 'query' -> %template from above: merge and refactor when verified
+                        (mika_coverage:branch_lead_to_new_query(Id, Outcome_first) -> 
+                                ((%(Id, Outcome_first) leads to a query that remains to be covered
                                         (Chosen_combination = First,
                                          Outcome = Outcome_first
                                         )

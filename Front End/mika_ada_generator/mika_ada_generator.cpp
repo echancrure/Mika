@@ -93,12 +93,12 @@ int main(int argc, char* argv[])
 				_strlwr_s(subprogram_name);
                 break;
               case 'T' :    //-T : the testing strategy switch
-                    if (!strcmp(&argv[i][2], "branch") || !strcmp(&argv[i][2], "decision") || !strcmp(&argv[i][2], "mcdc"))
+                    if (!strcmp(&argv[i][2], "branch") || !strcmp(&argv[i][2], "decision") || !strcmp(&argv[i][2], "mcdc") || !strcmp(&argv[i][2], "query"))
                       strcpy_s(strategy, &argv[i][2]);
                     else if (!strcmp(&argv[i][2], "exception"))
                       strcpy_s(strategy, "rune_coverage");
                     else {
-                      fprintf(stdout, "Mika Generator Warning: invalid -T switch argument is ignored: %s. Should be '-Tbranch', '-Tdecision', '-Tmcdc' or '-Texception'.\n", argv[i]);
+                      fprintf(stdout, "Mika Generator Warning: invalid -T switch argument is ignored: %s. Should be '-Tbranch', '-Tdecision', '-Tmcdc', '-Tquery' or '-Texception'.\n", argv[i]);
 			          fflush(stdout);
                     }
                     break;

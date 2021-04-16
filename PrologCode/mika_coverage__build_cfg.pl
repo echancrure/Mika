@@ -594,21 +594,38 @@ cover(procedure_call(Call), carry_on) :-
                 true    %see below
         ),
         (mika_name_atts:mika_name_atts__is_name_atts(Functor) ->
-                (mika_name_atts:mika_name_atts__get(name, Functor, Subprogram_name),
-                 mika_globals:mika_globals__get_BT(current_node_bran, N_bran),
-	         mika_globals:mika_globals__get_BT(current_node_deci, N_deci),
-                 mika_globals:mika_globals__get_BT(current_arc_bran, B_bran),        %true or false
-	         mika_globals:mika_globals__get_BT(current_arc_deci, B_deci),        %true or false
-	         (call_bran(N_bran, Subprogram_name, B_bran) ->
-		        true
-	         ;
-		        assert(call_bran(N_bran, Subprogram_name, B_bran))	%and the call is not followed
-	         ),
-	         (call_deci(N_deci, Subprogram_name, B_deci) ->
-		        true
-	         ;
-		        assert(call_deci(N_deci, Subprogram_name, B_deci))	%and the call is not followed
-	         )
+                (%trace,
+                 mika_name_atts:mika_name_atts__get(name, Functor, Subprogram_name),
+                 mika_symbolic:mika_symbolic__parse(Subprogram_name, _File_name, _File_extension, _Line, _Column, Id),
+                 (Id == 'secretmikacall' ->
+                        (mika_globals:mika_globals__get_NBT('strategy', Strategy),
+                         (Strategy == 'query' ->
+                                (%trace,
+                                 mika_symbolic:remove_runes(Operand, Clean_operand),
+                                 Clean_operand = [SecretMikaCallId, _BooleanExpression],
+                                 create_query_arc(SecretMikaCallId)
+                                )
+                         ;
+                                true    %the call to SecretMikaCall is ignored
+                         )
+                        )
+                 ;
+                        (mika_globals:mika_globals__get_BT(current_node_bran, N_bran),
+                         mika_globals:mika_globals__get_BT(current_node_deci, N_deci),
+                         mika_globals:mika_globals__get_BT(current_arc_bran, B_bran),        %true or false
+                         mika_globals:mika_globals__get_BT(current_arc_deci, B_deci),        %true or false
+                         (call_bran(N_bran, Subprogram_name, B_bran) ->
+                                true
+                         ;
+                                assert(call_bran(N_bran, Subprogram_name, B_bran))	%and the call is not followed
+                         ),
+                         (call_deci(N_deci, Subprogram_name, B_deci) ->
+                                true
+                         ;
+                                assert(call_deci(N_deci, Subprogram_name, B_deci))	%and the call is not followed
+                         )
+                        )
+                 )
                 )
         ;
          Functor == all ->

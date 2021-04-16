@@ -16,75 +16,88 @@
 %  handled with mika_symbolic__interpret.pl
 % procedure calls are actual statements: handled within mika_symbolic__execute.pl
 handle_subprogram_call(Functor, Operand_dirty, Symbolic, Constraint, Type, Exception) :-
-        %trace,
-        mika_globals:mika_globals__get_NBT('strategy', Strategy),                  %global branch, decision or condition coverage desired
+        remove_runes(Operand_dirty, Operand),
+        mika_globals:mika_globals__get_NBT('strategy', Strategy),
         mika_sub_atts:mika_sub_atts__get('status', Functor, Status),
         mika_sub_atts:mika_sub_atts__get('name', Functor, Subprogram_name),
-        remove_runes(Operand_dirty, Operand),
         (Status == 'bodied' ->    %a normal subprogram whose body is available
-                (mika_coverage:mika_coverage__update_call_stack('push', Strategy),
-                 mika_coverage:mika_coverage__add_to_current_path('condition', (start(Subprogram_name), true)),
-                 mika_coverage:mika_coverage__add_to_current_path('decision', (start(Subprogram_name), true)),
-                 mika_coverage:mika_coverage__add_to_current_path('branch', (start(Subprogram_name), true)),
-                 mika_sub_atts:mika_sub_atts__get('params', Functor, Params),
-                 mika_sub_atts:mika_sub_atts__get('decls', Functor, Decls),
-                 mika_sub_atts:mika_sub_atts__get('body', Functor, Body),
-                 mika_sub_atts:mika_sub_atts__get('return', Functor, Return),
-                 my_copy_term('locals', a(Return, Params, Decls, Body), a(Return_c, Params_c, Decls_c, Body_c)),
-                 declare_params(Params_c),      %declare parameters as unused Seav variables (possibly with initialisation)
-                 %trace,
-                 freeze_arguments(Operand, Operand_frozen),
-                 (check_for_unhandled(Operand_frozen, Has_unhandled),
-                        (Has_unhandled == 'no' ->
-                                (match_params(Operand_frozen, Params_c, pre),        %in and in_out parameters are assigned THE passed operands
-                                 (Return == no_return ->        %it is a procedure
-                                        true
-                                 ;
-                                        (mika_sub_atts:mika_sub_atts__get(return_type, Functor, Subtype_indication_or_access_definition),
-                                         exec(object(not_qualified, [Return_c], Subtype_indication_or_access_definition, no_init), carry_on) %we declare the return variable
-                                        )
-                                 ),
-                                 exec(Decls_c, carry_on),
-                                 %garbage_collect,
-                                 exec(Body_c, Flow),
-                                 mika_coverage:mika_coverage__update_call_stack('pop', Strategy),
-                                 (common_util:common_util__is_an_exception(Flow) ->
-                                        Exception = Flow
-                                 ;
-                                        ((Return == 'no_return' ->        %it is a procedure : Flow could be 'carry_on' or 'return'
-                                                match_params(Operand_frozen, Params_c, post)
-                                         ;                              %it is a function : Flow must be 'return'
-                                                (Flow == 'return' ->
-                                                        (symbolically_interpret(Return_c, Symbolic, Constraint, Type, _Exception_),
-                                                         (Type == unhandled_expression ->
-                                                                (mika_name_atts:mika_name_atts__get(name, Return, Return_name),
-                                                                 create_unhandled(Constraint, function_call_no_return, "return contains unhandled entities")
-                                                                )
-                                                         ;
-                                                                true
-                                                         )
-                                                        )
-                                                %;
-                                                % Flow = exception_raised(_Exception_name, _String_Expression) ->
-                                                %        true
-                                                ;
-                                                        common_util__error(10, "Control path in a function without a return statement", "Cannot proceed", [(subprogram_name, Subprogram_name)], 1068189, mika_symbolic, handle_subprogram_call, no_localisation, "Should never happen")
-                                                )
-                                         )
-                                        )
-                                 )
+                (mika_symbolic:mika_symbolic__parse(Subprogram_name, _File_name, _File_extension, _Line, _Column, Id),
+                 (Id = 'secretmikacall' ->
+                        (Strategy == 'query' ->
+                                (Operand = [SecretMikaCallId, BooleanExpression],
+                                 %trace,
+                                 traverseSecretMikaCall(SecretMikaCallId, BooleanExpression, Exception) 
                                 )
                         ;
-                                (%some of the arguments are unhandled
-                                 Type = 'unhandled_expression',
-                                 (Return == 'no_return' ->
-                                        mika_unhandled_atts:mika_unhandled_atts__create(Constraint, Subprogram_name, procedure_call)
-                                 ;
-                                        (mika_name_atts:mika_name_atts__get(name, Return, Return_name),
-                                         mika_unhandled_atts:mika_unhandled_atts__create(Constraint, Return_name, function_call_return)
+                                Exception = 'carry_on' %SecreteMikaCalls are ignored when not in query mode
+                        )
+                 ;
+                         (%trace,
+                          mika_coverage:mika_coverage__add_to_current_path('condition', (start(Subprogram_name), true)),
+                          mika_coverage:mika_coverage__add_to_current_path('decision', (start(Subprogram_name), true)),
+                          mika_coverage:mika_coverage__add_to_current_path('branch', (start(Subprogram_name), true)),
+                          mika_coverage:mika_coverage__update_call_stack('push', Strategy),
+                          mika_sub_atts:mika_sub_atts__get('params', Functor, Params),
+                          mika_sub_atts:mika_sub_atts__get('decls', Functor, Decls),
+                          mika_sub_atts:mika_sub_atts__get('body', Functor, Body),
+                          mika_sub_atts:mika_sub_atts__get('return', Functor, Return),
+                          my_copy_term('locals', a(Return, Params, Decls, Body), a(Return_c, Params_c, Decls_c, Body_c)),
+                          declare_params(Params_c),      %declare parameters as unused Seav variables (possibly with initialisation)
+                          %trace,
+                          freeze_arguments(Operand, Operand_frozen),
+                          (check_for_unhandled(Operand_frozen, Has_unhandled),
+                                (Has_unhandled == 'no' ->
+                                        (match_params(Operand_frozen, Params_c, pre),        %in and in_out parameters are assigned THE passed operands
+                                        (Return == no_return ->        %it is a procedure
+                                                true
+                                        ;
+                                                (mika_sub_atts:mika_sub_atts__get(return_type, Functor, Subtype_indication_or_access_definition),
+                                                exec(object(not_qualified, [Return_c], Subtype_indication_or_access_definition, no_init), carry_on) %we declare the return variable
+                                                )
+                                        ),
+                                        exec(Decls_c, carry_on),
+                                        %garbage_collect,
+                                        exec(Body_c, Flow),
+                                        mika_coverage:mika_coverage__update_call_stack('pop', Strategy),
+                                        (common_util:common_util__is_an_exception(Flow) ->
+                                                Exception = Flow
+                                        ;
+                                                ((Return == 'no_return' ->        %it is a procedure : Flow could be 'carry_on' or 'return'
+                                                        match_params(Operand_frozen, Params_c, post)
+                                                ;                              %it is a function : Flow must be 'return'
+                                                        (Flow == 'return' ->
+                                                                (symbolically_interpret(Return_c, Symbolic, Constraint, Type, _Exception_),
+                                                                (Type == unhandled_expression ->
+                                                                        (mika_name_atts:mika_name_atts__get(name, Return, Return_name),
+                                                                        create_unhandled(Constraint, function_call_no_return, "return contains unhandled entities")
+                                                                        )
+                                                                ;
+                                                                        true
+                                                                )
+                                                                )
+                                                        %;
+                                                        % Flow = exception_raised(_Exception_name, _String_Expression) ->
+                                                        %        true
+                                                        ;
+                                                                common_util__error(10, "Control path in a function without a return statement", "Cannot proceed", [(subprogram_name, Subprogram_name)], 1068189, mika_symbolic, handle_subprogram_call, no_localisation, "Should never happen")
+                                                        )
+                                                )
+                                                )
                                         )
-                                 )
+                                        )
+                                ;
+                                        (%some of the arguments are unhandled
+                                        Type = 'unhandled_expression',
+                                        (Return == 'no_return' ->
+                                                mika_unhandled_atts:mika_unhandled_atts__create(Constraint, Subprogram_name, procedure_call)
+                                        ;
+                                                (mika_name_atts:mika_name_atts__get(name, Return, Return_name),
+                                                 mika_unhandled_atts:mika_unhandled_atts__create(Constraint, Return_name, function_call_return)
+                                                )
+                                        )
+                                        )
                                 )
+                          )
                         )
                  )
                 )
@@ -145,6 +158,18 @@ handle_subprogram_call(Functor, Operand_dirty, Symbolic, Constraint, Type, Excep
         ;
                 true
         ).
+
+traverseSecretMikaCall(SecretMikaCallId, BooleanExpression, Exception) :-
+        mika_coverage:check_query_state(remain_to_be_covered, SecretMikaCallId),
+        symbolically_interpret_boolean(BooleanExpression, Symb, Const_exp, _Type, _E),
+        midoan_solver__sdl(Const_exp),
+        Exception = exception([id(fakeException(SecretMikaCallId)), symb(Symb)]).
+traverseSecretMikaCall(SecretMikaCallId, _BooleanExpression, Exception) :-
+        mika_coverage:add_false_query_to_current_path(SecretMikaCallId),
+        mika_coverage:path_lead_to_new_query,
+        Exception = 'carry_on'.
+traverseSecretMikaCall(_SecretMikaCallId, _BooleanExpression, _Exception) :-
+        fail.   %we backtrack up the CFG
 
 remove_runes([], []).
 remove_runes([Operand_dirty|Rest_dirty], [Operand|Rest]) :-
