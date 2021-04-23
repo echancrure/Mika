@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                 Copyright 2020 Dr Christophe Meudec 
-%%                                     <http://www.echancrure.eu/>
+%%                                 Copyright 2021 IT Carlow - Dr Christophe Meudec 
+%%                                     <https://github.com/echancrure/Mika>
 %% This file is part of Mika.
 %% Mika is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
 %%   the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -304,7 +304,7 @@ create_dummy_mika_test_point :-
         print_copyright('dummy_mika_test_point'),
         format('dummy_mika_test_point', "--fake test point for RTL variables: necessary because we cannot set test points for RTL libraries\n", []),
         format('dummy_mika_test_point', "--this should be empty if not, ignoring the elaboration of the subprogram under test should help\n", []),
-        format('dummy_mika_test_point', "--if not, send its contents to Midoan.\n", []).
+        format('dummy_mika_test_point', "--if not, send its contents to echancrure@gmail.com.\n", []).
 %%%
 %seeding the random generator to ensure non deterministic behaviour : good for release mode
 %in debug mode : harder to see time efficiency improvements due to variations; but then again some bugs may be dependent on path followed : non-deterministic would cover more possibilities
@@ -563,8 +563,8 @@ print_preamble(Stream, datime(Year, Month, Day, Hour, Min, Sec), Orig_dir, Targe
 print_copyright(Stream) :-
         format(Stream, "----------------------------------------------------------\n", []),
         format(Stream, "--              MIKA TEST INPUTS GENERATOR              --\n", []),
-        format(Stream, "-- Copyright Midoan Software Engineering Solutions Ltd. --\n", []),
-        format(Stream, "--                http://www.midoan.com/                --\n", []),
+        format(Stream, "--     Copyright IT Carlow - Dr Christophe Meudec       --\n", []),
+        format(Stream, "--         https://github.com/echancrure/Mika           --\n", []),
         format(Stream, "----------------------------------------------------------\n", []).
 %%%
         print_init_driver_ads(Nb_tests) :-

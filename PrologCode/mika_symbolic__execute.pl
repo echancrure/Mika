@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                 Copyright 2020 Dr Christophe Meudec 
-%%                                     <http://www.echancrure.eu/>
+%%                                 Copyright 2021 IT Carlow - Dr Christophe Meudec 
+%%                                     <https://github.com/echancrure/Mika>
 %% This file is part of Mika.
 %% Mika is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
 %%   the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -45,7 +45,7 @@ exec([Next|Rest], Flow) :-
         (Intermediate_flow == 'carry_on' ->
                 exec(Rest, Flow)           %we carry on
         ;
-                common_util__error(10, "Intermediate flow is not carry_on", "Should never happen", [(intermediate_flow, Intermediate_flow)], 102608, mika_symbolic, exec, no_localisation, "Contact Midoan today")
+                common_util__error(10, "Intermediate flow is not carry_on", "Should never happen", [(intermediate_flow, Intermediate_flow)], 102608, mika_symbolic, exec, no_localisation, "Contact echancrure@gmail.com")
         ).
 
 exec(stmts(Statements), Flow) :-
